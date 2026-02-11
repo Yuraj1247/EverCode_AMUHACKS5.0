@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart } from 'lucide-react';
 import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus } from '../types';
 
 const Engine: React.FC = () => {
@@ -19,34 +19,89 @@ const Engine: React.FC = () => {
   }, [subjects, studentProfile]);
 
   const validateInputs = () => {
-    // Rule 1: At least one subject
     if (subjects.length === 0) {
       setStatus(CalculationStatus.INVALID);
       return;
     }
-
-    // Rule 2: Subject Data Integrity
     const allSubjectsValid = subjects.every(sub => 
       sub.name.trim().length > 0 && 
       sub.backlogChapters > 0 && 
       sub.deadline !== ''
     );
-
     if (!allSubjectsValid) {
       setStatus(CalculationStatus.INVALID);
       return;
     }
-
-    // Rule 3: Profile Integrity
     if (studentProfile.availableHoursPerDay <= 0) {
       setStatus(CalculationStatus.INVALID);
       return;
     }
-
     setStatus(CalculationStatus.VALID);
   };
 
-  // --- Subject Actions ---
+  // --- Phase 2: Metric Calculation Engine ---
+  const calculateDeadlineMetrics = (rawSubjects: Subject[]): Subject[] => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return rawSubjects.map(sub => {
+      let daysRemaining = 30; // Default
+      let urgencyScore = 0.2;
+      let urgencyLabel = 'Low';
+      let urgencyColor = 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5';
+
+      if (sub.deadline) {
+        const deadlineDate = new Date(sub.deadline);
+        deadlineDate.setHours(0, 0, 0, 0);
+        const diffTime = deadlineDate.getTime() - today.getTime();
+        daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (daysRemaining < 0) daysRemaining = 0;
+      }
+
+      // Urgency Logic
+      if (daysRemaining <= 3) {
+        urgencyScore = 1.0;
+        urgencyLabel = 'Critical';
+        urgencyColor = 'text-red-500 border-red-500/50 bg-red-500/10';
+      } else if (daysRemaining <= 7) {
+        urgencyScore = 0.8;
+        urgencyLabel = 'High';
+        urgencyColor = 'text-orange-500 border-orange-500/50 bg-orange-500/10';
+      } else if (daysRemaining <= 14) {
+        urgencyScore = 0.5;
+        urgencyLabel = 'Moderate';
+        urgencyColor = 'text-yellow-500 border-yellow-500/50 bg-yellow-500/10';
+      }
+
+      return {
+        ...sub,
+        daysRemaining,
+        urgencyScore,
+        urgencyLabel,
+        urgencyColor
+      };
+    });
+  };
+
+  // Derived state for rendering (does not mutate original state persistence)
+  const analyzedSubjects = useMemo(() => calculateDeadlineMetrics(subjects), [subjects]);
+
+  // Summary Statistics
+  const summaryStats = useMemo(() => {
+    if (analyzedSubjects.length === 0) return null;
+    
+    const mostUrgent = analyzedSubjects.reduce((prev, current) => 
+      (prev.daysRemaining ?? 999) < (current.daysRemaining ?? 999) ? prev : current
+    );
+
+    const avgDays = Math.round(analyzedSubjects.reduce((acc, curr) => acc + (curr.daysRemaining || 0), 0) / analyzedSubjects.length);
+    const criticalCount = analyzedSubjects.filter(s => (s.daysRemaining || 0) <= 7).length;
+
+    return { mostUrgent, avgDays, criticalCount };
+  }, [analyzedSubjects]);
+
+  // --- Actions ---
   const addSubject = () => {
     const newSubject: Subject = {
       id: crypto.randomUUID(),
@@ -72,29 +127,28 @@ const Engine: React.FC = () => {
     }));
   };
 
-  // --- Profile Actions ---
   const updateStudentProfile = (field: keyof StudentProfile, value: any) => {
     if (field === 'availableHoursPerDay' && value < 1) value = 1;
     if (field === 'availableHoursPerDay' && value > 24) value = 24;
     setStudentProfile(prev => ({ ...prev, [field]: value }));
   };
 
-  // --- UI Helpers ---
+  // --- Options ---
   const difficultyOptions: DifficultyLevel[] = ['Low', 'Moderate', 'High'];
   const stressOptions: StressLevel[] = ['Low', 'Moderate', 'High'];
   const paceOptions: LearningPace[] = ['Slow', 'Moderate', 'Fast'];
 
   return (
     <div className="min-h-screen pt-28 pb-32 px-4 md:px-8 bg-black bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-black to-black">
-      <div className="max-w-3xl mx-auto space-y-12">
+      <div className="max-w-4xl mx-auto space-y-12">
         
         {/* Header */}
         <div className="text-center space-y-3">
           <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">
-            Academic <span className="text-gradient">Input System</span>
+            Academic <span className="text-gradient">Intelligence</span>
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base">
-            Configure your academic context. This data will serve as the foundation for your recovery strategy.
+            Input your workload. The engine analyzes deadlines and urgency in real-time.
           </p>
         </div>
 
@@ -103,7 +157,7 @@ const Engine: React.FC = () => {
           <div className="flex justify-between items-end border-b border-white/10 pb-4">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
               <Layers className="text-red-500" size={18} />
-              Subject Modules
+              Subject Workload
             </h2>
             <button 
               onClick={addSubject}
@@ -115,18 +169,26 @@ const Engine: React.FC = () => {
 
           <div className="space-y-4">
             <AnimatePresence initial={false}>
-              {subjects.map((subject) => (
+              {analyzedSubjects.map((subject) => (
                 <motion.div
                   key={subject.id}
                   initial={{ opacity: 0, height: 0, y: 10 }}
                   animate={{ opacity: 1, height: 'auto', y: 0 }}
                   exit={{ opacity: 0, height: 0, scale: 0.95 }}
-                  className="glass-panel p-5 rounded-xl border border-white/10 relative group hover:border-red-500/20 transition-all overflow-hidden"
+                  className={`glass-panel p-5 rounded-xl border relative group transition-all overflow-hidden ${subject.urgencyColor ? subject.urgencyColor.replace('text-', 'border-').split(' ')[1] : 'border-white/10'}`}
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                  {/* Urgency Strip */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${subject.urgencyColor?.split(' ')[2].replace('/10','/80')}`}></div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                     
-                    {/* Name */}
-                    <div className="md:col-span-5 space-y-1.5">
+                    {/* Name & Urgency Label */}
+                    <div className="md:col-span-5 space-y-2">
+                      <div className="flex justify-between items-center md:hidden">
+                         <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded ${subject.urgencyColor?.split(' ')[2]} ${subject.urgencyColor?.split(' ')[0]}`}>
+                           {subject.urgencyLabel}
+                         </span>
+                      </div>
                       <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">Subject Name</label>
                       <div className="relative">
                         <BookOpen className="absolute left-3 top-3 text-gray-600" size={14} />
@@ -138,6 +200,16 @@ const Engine: React.FC = () => {
                           className={`w-full bg-black/40 border rounded-lg py-2.5 pl-9 pr-3 text-sm text-white placeholder-gray-700 focus:outline-none focus:ring-1 transition-all ${subject.name ? 'border-white/10 focus:border-red-500' : 'border-red-500/30'}`}
                         />
                       </div>
+                      <div className="hidden md:flex items-center gap-2 mt-1">
+                         <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded ${subject.urgencyColor?.split(' ')[2]} ${subject.urgencyColor?.split(' ')[0]}`}>
+                           {subject.urgencyLabel} Priority
+                         </span>
+                         {(subject.daysRemaining || 0) <= 3 && (
+                            <span className="flex items-center gap-1 text-[10px] text-red-400 animate-pulse">
+                              <AlertTriangle size={10} /> DANGER ZONE
+                            </span>
+                         )}
+                      </div>
                     </div>
 
                     {/* Backlog */}
@@ -148,19 +220,24 @@ const Engine: React.FC = () => {
                         min="1"
                         value={subject.backlogChapters}
                         onChange={(e) => updateSubjectField(subject.id, 'backlogChapters', parseInt(e.target.value) || 0)}
-                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-red-500 transition-all text-center"
+                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-red-500 transition-all text-center font-mono"
                       />
                     </div>
 
-                    {/* Deadline */}
+                    {/* Deadline with Day Counter */}
                     <div className="md:col-span-3 space-y-1.5">
-                      <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">Deadline</label>
+                      <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider flex justify-between">
+                        <span>Deadline</span>
+                        {subject.deadline && (
+                          <span className={subject.urgencyColor?.split(' ')[0]}>{subject.daysRemaining} Days Left</span>
+                        )}
+                      </label>
                       <input 
                         type="date" 
                         value={subject.deadline}
                         min={new Date().toISOString().split('T')[0]}
                         onChange={(e) => updateSubjectField(subject.id, 'deadline', e.target.value)}
-                        className={`w-full bg-black/40 border rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-1 transition-all ${subject.deadline ? 'border-white/10 focus:border-red-500' : 'border-red-500/30'}`}
+                        className={`w-full bg-black/40 border rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-1 transition-all font-mono ${subject.deadline ? 'border-white/10 focus:border-red-500' : 'border-red-500/30'}`}
                       />
                     </div>
 
@@ -202,7 +279,49 @@ const Engine: React.FC = () => {
           </div>
         </div>
 
-        {/* 2. STUDENT PROFILE SECTION */}
+        {/* 2. DEADLINE SUMMARY SECTION (New Phase 2 Feature) */}
+        {summaryStats && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-4"
+          >
+            <div className="glass-panel p-4 rounded-xl border border-white/10 flex items-center gap-4">
+              <div className="p-3 bg-red-500/10 rounded-lg text-red-500">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Most Urgent</p>
+                <p className="text-white font-bold text-sm truncate max-w-[150px]">{summaryStats.mostUrgent?.name || "None"}</p>
+                <p className="text-red-400 text-xs">{summaryStats.mostUrgent?.daysRemaining} days left</p>
+              </div>
+            </div>
+
+            <div className="glass-panel p-4 rounded-xl border border-white/10 flex items-center gap-4">
+              <div className="p-3 bg-blue-500/10 rounded-lg text-blue-500">
+                <BarChart size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Avg Deadline</p>
+                <p className="text-white font-bold text-sm">{summaryStats.avgDays} Days</p>
+                <p className="text-gray-400 text-xs">Across {subjects.length} subjects</p>
+              </div>
+            </div>
+
+            <div className="glass-panel p-4 rounded-xl border border-white/10 flex items-center gap-4">
+              <div className="p-3 bg-orange-500/10 rounded-lg text-orange-500">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Critical Load</p>
+                <p className="text-white font-bold text-sm">{summaryStats.criticalCount} Subjects</p>
+                <p className="text-orange-400 text-xs">Due within 7 days</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 3. STUDENT PROFILE SECTION */}
         <div className="space-y-6">
           <div className="flex items-end border-b border-white/10 pb-4">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
@@ -264,7 +383,7 @@ const Engine: React.FC = () => {
           </div>
         </div>
 
-        {/* 3. ACTION BAR (VALIDATION STATE) */}
+        {/* 4. ACTION BAR (VALIDATION STATE) */}
         <div className="fixed bottom-0 left-0 w-full bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 z-40">
           <div className="max-w-3xl mx-auto flex items-center justify-between">
              <div className="flex items-center gap-3">

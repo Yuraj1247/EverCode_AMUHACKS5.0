@@ -8,6 +8,11 @@ export interface Subject {
   backlogChapters: number;
   deadline: string; // ISO date string
   difficulty: DifficultyLevel;
+  // Phase 2: Dynamic Metrics (computed at runtime)
+  daysRemaining?: number;
+  urgencyScore?: number;
+  urgencyLabel?: string;
+  urgencyColor?: string; // Tailwind class string
 }
 
 export interface StudentProfile {
