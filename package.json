@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "barchart": "^0.6.1",
     "framer-motion": "^12.34.0",
     "install": "^0.13.0",
     "lucide-react": "^0.563.0",

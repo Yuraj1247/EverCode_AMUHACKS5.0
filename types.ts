@@ -61,8 +61,9 @@ export interface AllocationMetrics {
   message: string;
 }
 
-// Phase 7: Weekly Execution Plan
+// Phase 7 & Adaptive Modules
 export type TaskType = 'Deep Work' | 'Revision' | 'Practice' | 'Buffer';
+export type TaskStatus = 'Pending' | 'Completed' | 'Partially Completed' | 'Missed';
 
 export interface PlanTask {
   id: string;
@@ -71,7 +72,7 @@ export interface PlanTask {
   type: TaskType;
   durationMinutes: number;
   color: string;
-  isCompleted: boolean;
+  status: TaskStatus; // New: Track status
 }
 
 export interface DayPlan {
@@ -90,11 +91,23 @@ export interface WeeklyPlan {
   highestDay: number;
 }
 
+// New: Module 7 Analytics
+export interface AdaptiveMetrics {
+  completionRate: number;
+  stressTrend: 'Increasing' | 'Stable' | 'Decreasing';
+  burnoutRisk: boolean;
+  effectiveDailyOutput: number; // hours per day
+  projectedRecoveryDate: string;
+  loadAdjustmentFactor: number;
+  mostChallengingSubject: string;
+}
+
 export interface EngineResults {
   prioritizedSubjects: Subject[];
   recoveryMetrics: RecoveryMetrics;
   allocationData: { allocatedSubjects: Subject[], metrics: AllocationMetrics };
   weeklyPlan: WeeklyPlan;
+  adaptiveMetrics?: AdaptiveMetrics; // New
   generatedAt: string;
 }
 
@@ -102,22 +115,16 @@ export interface RecoverySession {
   subjects: Subject[];
   profile: StudentProfile;
   results: EngineResults | null;
+  history: {
+    completionRates: number[];
+    stressLevels: StressLevel[];
+  };
 }
 
 export enum CalculationStatus {
   IDLE = 'IDLE',
   VALID = 'VALID',
   INVALID = 'INVALID'
-}
-
-// Placeholder for future phases
-export interface RecoveryPlan {
-  subjects: Subject[];
-  profile: StudentProfile;
-  generatedAt: string;
-  metrics: RecoveryMetrics;
-  allocation: AllocationMetrics;
-  weeklyPlan: WeeklyPlan;
 }
 
 export interface ContactForm {
