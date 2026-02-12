@@ -3,6 +3,7 @@ export type StressLevel = 'Low' | 'Moderate' | 'High';
 export type LearningPace = 'Slow' | 'Moderate' | 'Fast';
 
 export type PressureCategory = 'Critical' | 'High' | 'Moderate' | 'Low';
+export type PriorityTier = 'Critical Priority' | 'High Priority' | 'Medium Priority' | 'Low Priority';
 
 export interface Subject {
   id: string;
@@ -22,6 +23,11 @@ export interface Subject {
   pressureScore?: number;
   pressureCategory?: PressureCategory;
   pressureColor?: string; // Gradient class
+
+  // Phase 5: Prioritization Engine
+  priorityRank?: number;
+  priorityTier?: PriorityTier;
+  priorityExplanation?: string;
 }
 
 export interface StudentProfile {

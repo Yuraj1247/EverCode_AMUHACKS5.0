@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge } from 'lucide-react';
-import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics } from '../types';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star } from 'lucide-react';
+import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier } from '../types';
 
 const Engine: React.FC = () => {
   // --- Centralized State ---
@@ -145,11 +145,9 @@ const Engine: React.FC = () => {
     const weeklyCapacity = profile.availableHoursPerDay * 7;
 
     // 3. Compute Load Ratio
-    // Total Pressure is an abstract score, but generally scales with hours needed x urgency.
     const loadRatio = totalPressure / weeklyCapacity;
 
     // 4. Normalize to 0-100 Scale
-    // Scaling factor of 50 assumes a ratio of 2.0 (pressure is double capacity) is max difficulty.
     let difficultyScore = Math.round(loadRatio * 50);
     difficultyScore = Math.min(difficultyScore, 100);
 
@@ -183,17 +181,74 @@ const Engine: React.FC = () => {
     };
   };
 
+  // --- Phase 5: Intelligent Prioritization Module ---
+  const prioritizeSubjects = (scoredSubjects: Subject[]): Subject[] => {
+    // 1. Sort by Pressure Score (Descending)
+    const sorted = [...scoredSubjects].sort((a, b) => (b.pressureScore || 0) - (a.pressureScore || 0));
+    const total = sorted.length;
+
+    return sorted.map((sub, index) => {
+      const rank = index + 1;
+      const percentile = index / total; // 0 is top rank
+
+      // 2. Assign Tier
+      let tier: PriorityTier = 'Low Priority';
+      if (percentile < 0.30) tier = 'Critical Priority';
+      else if (percentile < 0.60) tier = 'High Priority';
+      else if (percentile < 0.85) tier = 'Medium Priority';
+
+      // 3. Generate Explanation
+      let explanation = "Maintain consistent study habits.";
+      const urgencyHigh = (sub.urgencyScore || 0) >= 0.8;
+      const urgencyLow = (sub.urgencyScore || 0) <= 0.2;
+      const backlogHigh = sub.backlogChapters >= 8;
+      const backlogLow = sub.backlogChapters <= 3;
+      const diffHigh = sub.difficulty === 'High';
+
+      if (tier === 'Critical Priority') {
+        if (urgencyHigh && backlogHigh) explanation = "High deadline pressure with significant backlog.";
+        else if (urgencyHigh) explanation = "Immediate deadline demanding urgent focus.";
+        else if (diffHigh) explanation = "Complex material requires extra preparation time.";
+        else explanation = "Critical combination of factors requires immediate attention.";
+      } else if (tier === 'High Priority') {
+        if (backlogHigh) explanation = "Large volume of work needs steady chipping away.";
+        else if (urgencyHigh) explanation = "Deadline approaching; prioritize over lighter tasks.";
+        else explanation = "Important subject requiring structured effort.";
+      } else if (tier === 'Medium Priority') {
+         explanation = "Moderate urgency; fit into schedule gaps.";
+      } else {
+         if (urgencyLow && backlogLow) explanation = "Low immediate pressure; manageable quickly.";
+         else explanation = "Lower priority; schedule when energy is lower.";
+      }
+
+      return {
+        ...sub,
+        priorityRank: rank,
+        priorityTier: tier,
+        priorityExplanation: explanation
+      };
+    });
+  };
+
   // --- Main Computation Chain ---
-  const { analyzedSubjects, recoveryMetrics } = useMemo(() => {
+  const { analyzedSubjects, prioritizedSubjects, recoveryMetrics } = useMemo(() => {
     const timeMetrics = calculateDeadlineMetrics(subjects);
     const pressureMetrics = calculatePressureMetrics(timeMetrics, studentProfile);
     
-    // Only calculate recovery if we have subjects
-    const recovery = subjects.length > 0 
-      ? calculateRecoveryDifficulty(pressureMetrics, studentProfile) 
-      : null;
+    // Only calculate prioritized and recovery if we have subjects
+    let prioritized: Subject[] = [];
+    let recovery: RecoveryMetrics | null = null;
 
-    return { analyzedSubjects: pressureMetrics, recoveryMetrics: recovery };
+    if (subjects.length > 0) {
+      prioritized = prioritizeSubjects(pressureMetrics);
+      recovery = calculateRecoveryDifficulty(pressureMetrics, studentProfile);
+    }
+
+    return { 
+      analyzedSubjects: pressureMetrics, 
+      prioritizedSubjects: prioritized, 
+      recoveryMetrics: recovery 
+    };
   }, [subjects, studentProfile]);
 
   // --- Actions ---
@@ -278,6 +333,25 @@ const Engine: React.FC = () => {
         </div>
       </div>
     );
+  };
+
+  // Helper to get tier color styles
+  const getTierStyles = (tier?: PriorityTier) => {
+    switch (tier) {
+      case 'Critical Priority': return 'border-red-500/50 bg-red-900/10 shadow-[0_0_15px_rgba(220,38,38,0.15)]';
+      case 'High Priority': return 'border-orange-500/50 bg-orange-900/10';
+      case 'Medium Priority': return 'border-yellow-500/50 bg-yellow-900/10';
+      default: return 'border-white/10 bg-white/5';
+    }
+  };
+
+  const getTierBadgeColor = (tier?: PriorityTier) => {
+    switch (tier) {
+      case 'Critical Priority': return 'bg-red-500 text-white';
+      case 'High Priority': return 'bg-orange-500 text-white';
+      case 'Medium Priority': return 'bg-yellow-500 text-black';
+      default: return 'bg-gray-700 text-gray-300';
+    }
   };
 
   return (
@@ -502,7 +576,74 @@ const Engine: React.FC = () => {
           </div>
         )}
 
-        {/* 3. STUDENT PROFILE SECTION */}
+        {/* 3. PRIORITY OVERVIEW (Phase 5) */}
+        {prioritizedSubjects.length > 0 && (
+          <div className="space-y-6">
+             <div className="flex items-end border-b border-white/10 pb-4">
+              <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
+                <ListOrdered className="text-red-500" size={18} />
+                Priority Roadmap
+              </h2>
+            </div>
+
+            {/* Mini Priority Analytics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
+               <div className="glass-panel p-4 rounded-lg border border-white/5 flex flex-col justify-center">
+                  <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider mb-1">Top Priority</span>
+                  <span className="text-white font-bold truncate">{prioritizedSubjects[0]?.name}</span>
+               </div>
+               <div className="glass-panel p-4 rounded-lg border border-white/5 flex flex-col justify-center">
+                  <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider mb-1">Critical Subjects</span>
+                  <span className="text-red-500 font-bold">{prioritizedSubjects.filter(s => s.priorityTier === 'Critical Priority').length}</span>
+               </div>
+               <div className="glass-panel p-4 rounded-lg border border-white/5 flex flex-col justify-center col-span-2 md:col-span-2">
+                  <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider mb-1">Strategy</span>
+                  <span className="text-gray-300 text-xs">
+                    Focus 70% of effort on top {Math.ceil(prioritizedSubjects.length * 0.3)} subjects.
+                  </span>
+               </div>
+            </div>
+
+            <div className="space-y-3">
+              <AnimatePresence>
+                 {prioritizedSubjects.map((subject) => (
+                    <motion.div 
+                      key={subject.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className={`glass-panel rounded-xl border flex flex-col md:flex-row items-center gap-6 p-5 transition-all relative overflow-hidden ${getTierStyles(subject.priorityTier)} ${subject.priorityRank === 1 ? 'md:scale-[1.02] z-10' : ''}`}
+                    >
+                       {/* Rank Number */}
+                       <div className="shrink-0 flex items-center justify-center w-12 h-12 rounded-full bg-black/40 border border-white/10 font-display font-bold text-xl text-white shadow-inner">
+                          {subject.priorityRank}
+                       </div>
+
+                       <div className="flex-1 text-center md:text-left">
+                          <div className="flex flex-col md:flex-row md:items-center gap-2 mb-1">
+                             <h4 className="font-bold text-lg text-white">{subject.name}</h4>
+                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider w-fit mx-auto md:mx-0 ${getTierBadgeColor(subject.priorityTier)}`}>
+                               {subject.priorityTier}
+                             </span>
+                          </div>
+                          <p className="text-sm text-gray-400 flex items-center justify-center md:justify-start gap-2">
+                             <Target size={14} className="text-gray-500"/> {subject.priorityExplanation}
+                          </p>
+                       </div>
+
+                       <div className="shrink-0 text-right">
+                          <div className="flex flex-col items-center md:items-end">
+                             <span className="text-2xl font-bold text-white leading-none">{subject.pressureScore}</span>
+                             <span className="text-[10px] text-gray-500 uppercase font-mono">Pressure Score</span>
+                          </div>
+                       </div>
+                    </motion.div>
+                 ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* 4. STUDENT PROFILE SECTION */}
         <div className="space-y-6">
           <div className="flex items-end border-b border-white/10 pb-4">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
@@ -559,7 +700,7 @@ const Engine: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. ACTION BAR */}
+        {/* 5. ACTION BAR */}
         <div className="fixed bottom-0 left-0 w-full bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 z-40">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
              <div className="flex items-center gap-3">
