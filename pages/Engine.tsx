@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass, Coffee, RefreshCcw, Book, CalendarDays } from 'lucide-react';
-import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics, WeeklyPlan, DayPlan, PlanTask, TaskType } from '../types';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass, Coffee, RefreshCcw, Book, CalendarDays, RotateCcw, Save, Check } from 'lucide-react';
+import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics, WeeklyPlan, DayPlan, PlanTask, TaskType, EngineResults, RecoverySession } from '../types';
 
 const Engine: React.FC = () => {
   // --- Centralized State ---
@@ -11,8 +11,49 @@ const Engine: React.FC = () => {
     learningPace: 'Moderate',
     stressLevel: 'Moderate'
   });
+  
+  // Results State (Persisted)
+  const [results, setResults] = useState<EngineResults | null>(null);
+  
+  // UI State
   const [status, setStatus] = useState<CalculationStatus>(CalculationStatus.INVALID);
-  const [expandedDay, setExpandedDay] = useState<number | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // --- Persistence Logic ---
+  const SESSION_KEY = 'recap_recovery_session_v1';
+
+  // Load Session
+  useEffect(() => {
+    const savedSession = localStorage.getItem(SESSION_KEY);
+    if (savedSession) {
+      try {
+        const parsed: RecoverySession = JSON.parse(savedSession);
+        if (parsed.subjects) setSubjects(parsed.subjects);
+        if (parsed.profile) setStudentProfile(parsed.profile);
+        if (parsed.results) setResults(parsed.results);
+        setLastSaved(new Date().toLocaleTimeString());
+      } catch (e) {
+        console.error("Failed to load session", e);
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // Save Session (Debounced/Effect)
+  useEffect(() => {
+    if (!isLoaded) return;
+    
+    const session: RecoverySession = {
+      subjects,
+      profile: studentProfile,
+      results
+    };
+    
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    setLastSaved(new Date().toLocaleTimeString());
+  }, [subjects, studentProfile, results, isLoaded]);
 
   // --- Validation Logic ---
   useEffect(() => {
@@ -40,7 +81,8 @@ const Engine: React.FC = () => {
     setStatus(CalculationStatus.VALID);
   };
 
-  // --- Phase 2: Metric Calculation Engine ---
+  // --- Logic Functions (Pure-ish) ---
+  
   const calculateDeadlineMetrics = (rawSubjects: Subject[]): Subject[] => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -60,7 +102,6 @@ const Engine: React.FC = () => {
         if (daysRemaining < 0) daysRemaining = 0;
       }
 
-      // Urgency Logic (Inverse Relationship)
       if (daysRemaining <= 3) {
         urgencyScore = 1.0;
         urgencyLabel = 'Critical';
@@ -85,7 +126,6 @@ const Engine: React.FC = () => {
     });
   };
 
-  // --- Phase 3: Pressure Scoring Engine ---
   const calculatePressureMetrics = (timedSubjects: Subject[], profile: StudentProfile): Subject[] => {
     const diffMap: Record<DifficultyLevel, number> = { 'Low': 1, 'Moderate': 1.5, 'High': 2 };
     const stressMap: Record<StressLevel, number> = { 'Low': 0.9, 'Moderate': 1.0, 'High': 1.2 };
@@ -108,7 +148,6 @@ const Engine: React.FC = () => {
       };
     });
 
-    // Determine Relative Categories
     const sortedScores = [...scoredSubjects].sort((a, b) => (b.pressureScore || 0) - (a.pressureScore || 0));
     
     return scoredSubjects.map(sub => {
@@ -137,7 +176,6 @@ const Engine: React.FC = () => {
     });
   };
 
-  // --- Phase 4: Overall Recovery Difficulty Engine ---
   const calculateRecoveryDifficulty = (enhancedSubjects: Subject[], profile: StudentProfile): RecoveryMetrics => {
     const totalPressure = enhancedSubjects.reduce((acc, curr) => acc + (curr.pressureScore || 0), 0);
     const weeklyCapacity = profile.availableHoursPerDay * 7;
@@ -174,7 +212,6 @@ const Engine: React.FC = () => {
     };
   };
 
-  // --- Phase 5: Intelligent Prioritization Module ---
   const prioritizeSubjects = (scoredSubjects: Subject[]): Subject[] => {
     const sorted = [...scoredSubjects].sort((a, b) => (b.pressureScore || 0) - (a.pressureScore || 0));
     const total = sorted.length;
@@ -220,7 +257,6 @@ const Engine: React.FC = () => {
     });
   };
 
-  // --- Phase 6: Smart Time Allocation Engine ---
   const allocateTime = (subjects: Subject[], profile: StudentProfile): { allocatedSubjects: Subject[], metrics: AllocationMetrics } => {
     let bufferRate = 0.10; 
     if (profile.stressLevel === 'High') bufferRate = 0.15;
@@ -308,9 +344,7 @@ const Engine: React.FC = () => {
     };
   };
 
-  // --- Phase 7: Weekly Plan Generator ---
   const generateWeeklyPlan = (subjects: Subject[], profile: StudentProfile): WeeklyPlan => {
-    // 1. Define Day Profiles (Load Curve)
     const dayProfiles = [
       { id: 1, label: 'Mon', intensity: 'Moderate' as const, multiplier: 1.0 },
       { id: 2, label: 'Tue', intensity: 'Moderate' as const, multiplier: 1.0 },
@@ -321,7 +355,6 @@ const Engine: React.FC = () => {
       { id: 7, label: 'Sun', intensity: 'Recovery' as const, multiplier: 0.5 },
     ];
 
-    // Initialize Days
     const weeklyPlan: DayPlan[] = dayProfiles.map(p => ({
       dayNumber: p.id,
       label: p.label,
@@ -331,7 +364,6 @@ const Engine: React.FC = () => {
       bufferMinutes: 0
     }));
 
-    // 2. Determine Frequency based on Priority & Stress
     const getFrequency = (tier?: PriorityTier) => {
       let freq = 3;
       if (tier === 'Critical Priority') freq = 6;
@@ -339,27 +371,32 @@ const Engine: React.FC = () => {
       else if (tier === 'Medium Priority') freq = 4;
       else freq = 3;
 
-      // Adjust for Stress: High stress means less switching, so maybe fewer days but focused blocks?
-      // Or spread out more thinly? Let's reduce frequency slightly to reduce context switching.
       if (profile.stressLevel === 'High' && freq > 3) freq -= 1;
       return freq;
     };
+    
+    const getTargetDays = (freq: number) => {
+      if (freq >= 7) return [0,1,2,3,4,5,6];
+      if (freq === 6) return [0,1,2,3,4,5]; 
+      if (freq === 5) return [0,1,2,3,4]; 
+      if (freq === 4) return [0,1,2,3]; 
+      if (freq === 3) return [0,2,4]; 
+      if (freq === 2) return [1,3]; 
+      return [0];
+    };
 
-    // 3. Distribute Subjects
     subjects.forEach(sub => {
       if (!sub.allocatedHours || sub.allocatedHours <= 0) return;
 
       const freq = getFrequency(sub.priorityTier);
       const totalWeeklyMinutes = sub.allocatedHours * 7 * 60;
-      const targetDays = getTargetDays(freq, dayProfiles);
+      const targetDays = getTargetDays(freq);
       
       const minutesPerSession = Math.floor(totalWeeklyMinutes / freq);
 
       targetDays.forEach(dayIndex => {
         const day = weeklyPlan[dayIndex];
         
-        // Block Breakdown logic
-        // If session > 90 mins, split into Deep Work + Revision
         if (minutesPerSession > 90) {
            const deepWork = Math.floor(minutesPerSession * 0.6);
            const revision = minutesPerSession - deepWork;
@@ -399,14 +436,12 @@ const Engine: React.FC = () => {
       });
     });
 
-    // 4. Insert Buffers & Finalize
     weeklyPlan.forEach((day, index) => {
       const profile = dayProfiles[index];
       const dailyCapMinutes = studentProfile.availableHoursPerDay * 60 * profile.multiplier;
       
       const bufferMins = Math.max(15, dailyCapMinutes - day.totalMinutes);
       
-      // Explicitly add buffer task if enough time
       if (bufferMins > 20) {
         day.tasks.push({
           id: 'buffer-' + day.dayNumber,
@@ -422,14 +457,11 @@ const Engine: React.FC = () => {
       }
     });
 
-    // 5. Recovery Forecast
     const totalBacklog = subjects.reduce((acc, s) => acc + s.backlogChapters, 0);
-    // Heuristic: 1 hour of study clears 0.6 chapters on average (conservative)
     const weeklyHours = weeklyPlan.reduce((acc, d) => acc + d.totalMinutes, 0) / 60;
     const estimatedVelocity = weeklyHours * 0.6; 
     const estimatedRecoveryDays = Math.ceil((totalBacklog / estimatedVelocity) * 7);
 
-    // Find highest workload day
     const highestDay = weeklyPlan.reduce((max, d) => d.totalMinutes > max ? d.totalMinutes : max, 0);
 
     return {
@@ -440,44 +472,44 @@ const Engine: React.FC = () => {
     };
   };
 
-  // Helper for picking distributed days
-  const getTargetDays = (freq: number, profiles: any[]) => {
-    // Indices 0-6
-    if (freq >= 7) return [0,1,2,3,4,5,6];
-    if (freq === 6) return [0,1,2,3,4,5]; // Skip Sun
-    if (freq === 5) return [0,1,2,3,4]; // Skip Sat, Sun
-    if (freq === 4) return [0,1,2,3]; // Mon-Thu peak
-    if (freq === 3) return [0,2,4]; // Mon, Wed, Fri
-    if (freq === 2) return [1,3]; // Tue, Thu
-    return [0];
-  };
-
-  // --- Main Computation Chain ---
-  const { analyzedSubjects, prioritizedSubjects, recoveryMetrics, allocationData, weeklyPlan } = useMemo(() => {
-    const timeMetrics = calculateDeadlineMetrics(subjects);
-    const pressureMetrics = calculatePressureMetrics(timeMetrics, studentProfile);
+  // --- Centralized Generation Function (Step 7) ---
+  const runRecoveryEngine = useCallback(() => {
+    setIsGenerating(true);
     
-    let prioritized: Subject[] = [];
-    let recovery: RecoveryMetrics | null = null;
-    let allocation: { allocatedSubjects: Subject[], metrics: AllocationMetrics } | null = null;
-    let plan: WeeklyPlan | null = null;
+    // Simulate slight delay for "Processing" feel
+    setTimeout(() => {
+        // Pipeline
+        const timeMetrics = calculateDeadlineMetrics(subjects);
+        const pressureMetrics = calculatePressureMetrics(timeMetrics, studentProfile);
+        
+        let prioritized: Subject[] = [];
+        let recovery: RecoveryMetrics | null = null;
+        let allocation: { allocatedSubjects: Subject[], metrics: AllocationMetrics } | null = null;
+        let plan: WeeklyPlan | null = null;
 
-    if (subjects.length > 0) {
-      prioritized = prioritizeSubjects(pressureMetrics);
-      recovery = calculateRecoveryDifficulty(pressureMetrics, studentProfile);
-      allocation = allocateTime(prioritized, studentProfile);
-      if (allocation) {
-        plan = generateWeeklyPlan(allocation.allocatedSubjects, studentProfile);
-      }
-    }
+        if (subjects.length > 0) {
+            prioritized = prioritizeSubjects(pressureMetrics);
+            recovery = calculateRecoveryDifficulty(pressureMetrics, studentProfile);
+            allocation = allocateTime(prioritized, studentProfile);
+            if (allocation) {
+                plan = generateWeeklyPlan(allocation.allocatedSubjects, studentProfile);
+            }
+        }
 
-    return { 
-      analyzedSubjects: pressureMetrics, 
-      prioritizedSubjects: allocation ? allocation.allocatedSubjects : prioritized,
-      recoveryMetrics: recovery,
-      allocationData: allocation,
-      weeklyPlan: plan
-    };
+        if (prioritized && recovery && allocation && plan) {
+            setResults({
+                prioritizedSubjects: allocation.allocatedSubjects,
+                recoveryMetrics: recovery,
+                allocationData: allocation,
+                weeklyPlan: plan,
+                generatedAt: new Date().toISOString()
+            });
+            // Scroll to results
+            window.scrollTo({ top: 800, behavior: 'smooth' });
+        }
+        
+        setIsGenerating(false);
+    }, 800);
   }, [subjects, studentProfile]);
 
   // --- Actions ---
@@ -490,10 +522,12 @@ const Engine: React.FC = () => {
       difficulty: 'Moderate'
     };
     setSubjects([...subjects, newSubject]);
+    setResults(null); // Clear calculated outputs
   };
 
   const removeSubject = (id: string) => {
     setSubjects(subjects.filter(s => s.id !== id));
+    setResults(null);
   };
 
   const updateSubjectField = (id: string, field: keyof Subject, value: any) => {
@@ -504,57 +538,57 @@ const Engine: React.FC = () => {
       }
       return sub;
     }));
+    setResults(null); // Clear calculated outputs
   };
 
   const updateStudentProfile = (field: keyof StudentProfile, value: any) => {
     if (field === 'availableHoursPerDay' && value < 1) value = 1;
     if (field === 'availableHoursPerDay' && value > 24) value = 24;
     setStudentProfile(prev => ({ ...prev, [field]: value }));
+    setResults(null); // Clear calculated outputs
   };
 
-  // --- Helpers ---
+  const resetSession = () => {
+    if (confirm("Are you sure? This will clear all subjects and plans.")) {
+        setSubjects([]);
+        setStudentProfile({
+            availableHoursPerDay: 4,
+            learningPace: 'Moderate',
+            stressLevel: 'Moderate'
+        });
+        setResults(null);
+        localStorage.removeItem(SESSION_KEY);
+        setStatus(CalculationStatus.INVALID);
+    }
+  };
+
+  // Reactive analysis for input list only (Phase 2 & 3 visuals)
+  const analyzedSubjects = useMemo(() => {
+    const timeMetrics = calculateDeadlineMetrics(subjects);
+    return calculatePressureMetrics(timeMetrics, studentProfile);
+  }, [subjects, studentProfile]);
+
+  // Helpers
   const difficultyOptions: DifficultyLevel[] = ['Low', 'Moderate', 'High'];
   const stressOptions: StressLevel[] = ['Low', 'Moderate', 'High'];
   const paceOptions: LearningPace[] = ['Slow', 'Moderate', 'Fast'];
-
-  // Circular Progress Component
+  
+  // Visual Helpers
   const CircularProgress = ({ score, color }: { score: number, color: string }) => {
     const radius = 50;
     const circumference = 2 * Math.PI * radius;
     const strokeDashoffset = circumference - (score / 100) * circumference;
-    
-    // Map Tailwind text color to hex for SVG stroke (approximate)
     const getColorHex = (c: string) => {
       if (c.includes('red')) return '#DC2626';
       if (c.includes('orange')) return '#F97316';
       if (c.includes('yellow')) return '#EAB308';
       return '#10B981';
     };
-
     return (
       <div className="relative w-40 h-40 flex items-center justify-center">
         <svg className="transform -rotate-90 w-full h-full">
-          <circle
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke="#1f2937"
-            strokeWidth="8"
-            fill="transparent"
-          />
-          <motion.circle
-            initial={{ strokeDashoffset: circumference }}
-            animate={{ strokeDashoffset }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            cx="80"
-            cy="80"
-            r={radius}
-            stroke={getColorHex(color)}
-            strokeWidth="8"
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeLinecap="round"
-          />
+          <circle cx="80" cy="80" r={radius} stroke="#1f2937" strokeWidth="8" fill="transparent" />
+          <motion.circle initial={{ strokeDashoffset: circumference }} animate={{ strokeDashoffset }} transition={{ duration: 1, ease: "easeOut" }} cx="80" cy="80" r={radius} stroke={getColorHex(color)} strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeLinecap="round" />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-4xl font-display font-bold text-white">{score}</span>
@@ -564,7 +598,6 @@ const Engine: React.FC = () => {
     );
   };
 
-  // Helper to get tier color styles
   const getTierStyles = (tier?: PriorityTier) => {
     switch (tier) {
       case 'Critical Priority': return 'border-red-500/50 bg-red-900/10 shadow-[0_0_15px_rgba(220,38,38,0.15)]';
@@ -597,14 +630,31 @@ const Engine: React.FC = () => {
     <div className="min-h-screen pt-28 pb-32 px-4 md:px-8 bg-black bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-black to-black">
       <div className="max-w-6xl mx-auto space-y-12">
         
-        {/* Header */}
-        <div className="text-center space-y-3">
-          <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">
-            Recovery <span className="text-gradient">Engine</span>
-          </h1>
-          <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base">
-            Input your academic data. We analyze pressure, urgency, and capacity to determine your recovery difficulty.
-          </p>
+        {/* Header with Persistence Controls */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="text-center md:text-left space-y-2">
+                <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">
+                    Recovery <span className="text-gradient">Engine</span>
+                </h1>
+                <p className="text-gray-400 max-w-lg text-sm md:text-base">
+                    Input your academic data. We analyze pressure, urgency, and capacity to determine your recovery difficulty.
+                </p>
+            </div>
+            
+            <div className="flex flex-col items-end gap-2">
+                 <button 
+                   onClick={resetSession} 
+                   className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-gray-400 hover:text-red-500 hover:border-red-500/30 transition-all"
+                 >
+                    <RotateCcw size={14} /> Start Fresh
+                 </button>
+                 {lastSaved && (
+                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-mono bg-black/40 px-3 py-1 rounded-full border border-white/5">
+                        <Check size={10} className="text-emerald-500" />
+                        SESSION SAVED {lastSaved}
+                     </div>
+                 )}
+            </div>
         </div>
 
         {/* 1. DYNAMIC SUBJECT SECTION */}
@@ -735,9 +785,17 @@ const Engine: React.FC = () => {
             )}
           </div>
         </div>
+        
+        {/* Recalculate Indicator */}
+        {subjects.length > 0 && !results && status === CalculationStatus.VALID && (
+             <div className="bg-yellow-900/10 border border-yellow-500/30 rounded-lg p-4 flex items-center gap-3 text-yellow-500">
+                <AlertTriangle size={18} />
+                <span className="text-sm font-medium">Inputs modified. Recalculation required to update plan.</span>
+             </div>
+        )}
 
         {/* 2. RECOVERY DIFFICULTY DASHBOARD (Phase 4) */}
-        {recoveryMetrics && (
+        {results?.recoveryMetrics && (
           <div className="space-y-6">
              <div className="flex items-end border-b border-white/10 pb-4">
               <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
@@ -753,23 +811,23 @@ const Engine: React.FC = () => {
             >
               {/* Main Score Panel */}
               <div className="md:col-span-2 glass-panel p-6 rounded-xl border border-white/10 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
-                <div className={`absolute top-0 right-0 p-32 rounded-full blur-3xl opacity-10 ${recoveryMetrics.color.replace('text-', 'bg-')}`}></div>
+                <div className={`absolute top-0 right-0 p-32 rounded-full blur-3xl opacity-10 ${results.recoveryMetrics.color.replace('text-', 'bg-')}`}></div>
                 
                 <div className="relative z-10 shrink-0">
-                  <CircularProgress score={recoveryMetrics.difficultyScore} color={recoveryMetrics.color} />
+                  <CircularProgress score={results.recoveryMetrics.difficultyScore} color={results.recoveryMetrics.color} />
                 </div>
                 
                 <div className="flex-1 text-center md:text-left relative z-10">
-                  <h3 className={`font-display text-2xl font-bold mb-2 ${recoveryMetrics.color}`}>
-                    {recoveryMetrics.recoveryCategory} Difficulty
+                  <h3 className={`font-display text-2xl font-bold mb-2 ${results.recoveryMetrics.color}`}>
+                    {results.recoveryMetrics.recoveryCategory} Difficulty
                   </h3>
                   <p className="text-gray-300 text-lg leading-relaxed mb-4">
-                    {recoveryMetrics.message}
+                    {results.recoveryMetrics.message}
                   </p>
                   <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/5">
                     <Activity size={12} className="text-gray-500" />
                     <span className="text-xs text-gray-400 font-mono">
-                      LOAD RATIO: {recoveryMetrics.loadRatio}
+                      LOAD RATIO: {results.recoveryMetrics.loadRatio}
                     </span>
                   </div>
                 </div>
@@ -780,12 +838,12 @@ const Engine: React.FC = () => {
                  <div>
                     <div className="flex justify-between items-center mb-1">
                        <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Total Pressure</span>
-                       <span className="text-white font-bold">{recoveryMetrics.totalPressure}</span>
+                       <span className="text-white font-bold">{results.recoveryMetrics.totalPressure}</span>
                     </div>
                     <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                        <motion.div 
                          initial={{ width: 0 }}
-                         animate={{ width: `${Math.min(recoveryMetrics.totalPressure, 100)}%` }}
+                         animate={{ width: `${Math.min(results.recoveryMetrics.totalPressure, 100)}%` }}
                          className="h-full bg-red-600" 
                        />
                     </div>
@@ -794,12 +852,12 @@ const Engine: React.FC = () => {
                  <div>
                     <div className="flex justify-between items-center mb-1">
                        <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Weekly Capacity</span>
-                       <span className="text-white font-bold">{recoveryMetrics.weeklyCapacity} hrs</span>
+                       <span className="text-white font-bold">{results.recoveryMetrics.weeklyCapacity} hrs</span>
                     </div>
                     <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                        <motion.div 
                          initial={{ width: 0 }}
-                         animate={{ width: `${Math.min((recoveryMetrics.weeklyCapacity / 168) * 100, 100)}%` }} // 168 = total hours in week
+                         animate={{ width: `${Math.min((results.recoveryMetrics.weeklyCapacity / 168) * 100, 100)}%` }} // 168 = total hours in week
                          className="h-full bg-blue-500" 
                        />
                     </div>
@@ -816,7 +874,7 @@ const Engine: React.FC = () => {
         )}
 
         {/* 3. PRIORITY OVERVIEW (Phase 5) */}
-        {prioritizedSubjects.length > 0 && (
+        {results?.prioritizedSubjects.length && results.prioritizedSubjects.length > 0 && (
           <div className="space-y-6">
              <div className="flex items-end border-b border-white/10 pb-4">
               <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
@@ -829,23 +887,23 @@ const Engine: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
                <div className="glass-panel p-4 rounded-lg border border-white/5 flex flex-col justify-center">
                   <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider mb-1">Top Priority</span>
-                  <span className="text-white font-bold truncate">{prioritizedSubjects[0]?.name}</span>
+                  <span className="text-white font-bold truncate">{results.prioritizedSubjects[0]?.name}</span>
                </div>
                <div className="glass-panel p-4 rounded-lg border border-white/5 flex flex-col justify-center">
                   <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider mb-1">Critical Subjects</span>
-                  <span className="text-red-500 font-bold">{prioritizedSubjects.filter(s => s.priorityTier === 'Critical Priority').length}</span>
+                  <span className="text-red-500 font-bold">{results.prioritizedSubjects.filter(s => s.priorityTier === 'Critical Priority').length}</span>
                </div>
                <div className="glass-panel p-4 rounded-lg border border-white/5 flex flex-col justify-center col-span-2 md:col-span-2">
                   <span className="text-[10px] text-gray-500 uppercase font-mono tracking-wider mb-1">Strategy</span>
                   <span className="text-gray-300 text-xs">
-                    Focus 70% of effort on top {Math.ceil(prioritizedSubjects.length * 0.3)} subjects.
+                    Focus 70% of effort on top {Math.ceil(results.prioritizedSubjects.length * 0.3)} subjects.
                   </span>
                </div>
             </div>
 
             <div className="space-y-3">
               <AnimatePresence>
-                 {prioritizedSubjects.map((subject) => (
+                 {results.prioritizedSubjects.map((subject) => (
                     <motion.div 
                       key={subject.id}
                       initial={{ opacity: 0, x: -20 }}
@@ -883,7 +941,7 @@ const Engine: React.FC = () => {
         )}
 
         {/* 4. WEEKLY RECOVERY PLAN (Phase 7) */}
-        {weeklyPlan && (
+        {results?.weeklyPlan && (
           <div className="space-y-6">
             <div className="flex items-end border-b border-white/10 pb-4">
               <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
@@ -901,12 +959,12 @@ const Engine: React.FC = () => {
                  </div>
                  <div className="flex items-center gap-6">
                     <div className="text-center">
-                       <span className="block text-3xl font-display font-bold text-white">{weeklyPlan.estimatedRecoveryDays}</span>
+                       <span className="block text-3xl font-display font-bold text-white">{results.weeklyPlan.estimatedRecoveryDays}</span>
                        <span className="text-xs text-gray-500 uppercase tracking-widest">Days to Clear</span>
                     </div>
                     <div className="w-px h-10 bg-white/10"></div>
                     <div className="text-center">
-                       <span className="block text-3xl font-display font-bold text-white">{weeklyPlan.totalWeeklyHours}</span>
+                       <span className="block text-3xl font-display font-bold text-white">{results.weeklyPlan.totalWeeklyHours}</span>
                        <span className="text-xs text-gray-500 uppercase tracking-widest">Weekly Hours</span>
                     </div>
                  </div>
@@ -915,7 +973,7 @@ const Engine: React.FC = () => {
 
             {/* Daily Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-               {weeklyPlan.days.map((day) => (
+               {results.weeklyPlan.days.map((day) => (
                  <motion.div
                    key={day.dayNumber}
                    initial={{ opacity: 0, scale: 0.95 }}
@@ -1042,14 +1100,21 @@ const Engine: React.FC = () => {
              </div>
 
              <button 
-               disabled={status !== CalculationStatus.VALID}
+               onClick={runRecoveryEngine}
+               disabled={status !== CalculationStatus.VALID || isGenerating}
                className={`px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${
                  status === CalculationStatus.VALID 
                  ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_20px_rgba(220,38,38,0.4)]' 
                  : 'bg-white/5 text-gray-600 cursor-not-allowed border border-white/5'
                }`}
              >
-               Generate Plan <ArrowRight size={14} />
+               {isGenerating ? (
+                  <RefreshCcw size={14} className="animate-spin" />
+               ) : results ? (
+                  <>Regenerate Plan <RefreshCcw size={14} /></>
+               ) : (
+                  <>Generate Plan <ArrowRight size={14} /></>
+               )}
              </button>
           </div>
         </div>

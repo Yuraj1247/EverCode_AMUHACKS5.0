@@ -90,6 +90,20 @@ export interface WeeklyPlan {
   highestDay: number;
 }
 
+export interface EngineResults {
+  prioritizedSubjects: Subject[];
+  recoveryMetrics: RecoveryMetrics;
+  allocationData: { allocatedSubjects: Subject[], metrics: AllocationMetrics };
+  weeklyPlan: WeeklyPlan;
+  generatedAt: string;
+}
+
+export interface RecoverySession {
+  subjects: Subject[];
+  profile: StudentProfile;
+  results: EngineResults | null;
+}
+
 export enum CalculationStatus {
   IDLE = 'IDLE',
   VALID = 'VALID',
