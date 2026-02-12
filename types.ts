@@ -30,6 +30,17 @@ export interface StudentProfile {
   stressLevel: StressLevel;
 }
 
+// Phase 4: Recovery Engine Metrics
+export interface RecoveryMetrics {
+  totalPressure: number;
+  weeklyCapacity: number;
+  loadRatio: number;
+  difficultyScore: number;
+  recoveryCategory: 'Low' | 'Moderate' | 'High' | 'Critical';
+  message: string;
+  color: string; // Tailwind color class for UI
+}
+
 export enum CalculationStatus {
   IDLE = 'IDLE',
   VALID = 'VALID',
@@ -41,6 +52,7 @@ export interface RecoveryPlan {
   subjects: Subject[];
   profile: StudentProfile;
   generatedAt: string;
+  metrics: RecoveryMetrics;
 }
 
 export interface ContactForm {
