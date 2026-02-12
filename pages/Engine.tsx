@@ -86,6 +86,16 @@ const Engine: React.FC = () => {
     setStatus(CalculationStatus.VALID);
   };
 
+  // --- Helper: Time Formatting ---
+  const formatDuration = (totalMinutes: number) => {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    
+    if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h`;
+    return `${minutes}m`;
+  };
+
   // --- Core Engine Logic Functions ---
   
   const calculateDeadlineMetrics = (rawSubjects: Subject[]): Subject[] => {
@@ -362,7 +372,7 @@ const Engine: React.FC = () => {
         day.tasks.push({
           id: 'buffer-' + day.dayNumber,
           subjectId: 'system-buffer',
-          subjectName: 'Flexible Recovery',
+          subjectName: 'Catch-up Time', // CHANGED: Simple terminology
           type: 'Buffer',
           durationMinutes: Math.floor(bufferMins),
           color: 'text-gray-500',
@@ -866,18 +876,25 @@ const Engine: React.FC = () => {
                                  <span className={`text-xs font-bold truncate max-w-[70%] group-hover:underline ${task.status === 'Completed' ? 'line-through opacity-50' : ''}`}>
                                    {task.subjectName}
                                  </span>
-                                 <span className="text-[10px] opacity-70 font-mono">{task.durationMinutes}m</span>
+                                 <span className="text-[10px] opacity-70 font-mono">{formatDuration(task.durationMinutes)}</span>
                               </div>
                               <div className="flex items-center justify-between">
                                  <div className="flex items-center gap-1.5 opacity-70">
                                      {getTaskIcon(task.type)}
-                                     <span className="text-[10px] uppercase tracking-wide">{task.type}</span>
+                                     <span className="text-[10px] uppercase tracking-wide">
+                                       {task.type === 'Buffer' ? 'Extra' : task.type}
+                                     </span>
                                  </div>
                                  <span className="text-[9px] uppercase font-bold tracking-widest opacity-60">{task.status === 'Pending' ? '' : task.status}</span>
                               </div>
                            </div>
                          ))
                        }
+                    </div>
+                    
+                    <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center text-xs text-gray-500 font-mono">
+                       <span>Total: {formatDuration(day.totalMinutes)}</span>
+                       {day.bufferMinutes > 0 && <span className="text-emerald-500/80">Free: {formatDuration(day.bufferMinutes)}</span>}
                     </div>
                  </motion.div>
                ))}
