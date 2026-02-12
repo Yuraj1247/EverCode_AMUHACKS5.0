@@ -214,7 +214,7 @@ All features are functional and accessible via browser.
 
 <img width="1907" height="956" alt="Screenshot 2026-02-12 094355" src="https://github.com/user-attachments/assets/2896f2c7-587c-44bd-b8a4-d66409c53aee" />
 <img width="1697" height="905" alt="Screenshot 2026-02-12 095824" src="https://github.com/user-attachments/assets/19910dda-65ce-40bd-80cf-ab89756a57bd" />
-img width="1310" height="824" alt="Screenshot 2026-02-12 095841" src="https://github.com/user-attachments/assets/ca698998-122a-407e-bb52-97be66a2996e" />
+<img width="1310" height="824" alt="Screenshot 2026-02-12 095841" src="https://github.com/user-attachments/assets/ca698998-122a-407e-bb52-97be66a2996e" />
 <img width="1673" height="919" alt="Screenshot 2026-02-12 095858" src="https://github.com/user-attachments/assets/98838316-0a23-45d1-a7de-ce6af342252f" />
 <img width="1609" height="878" alt="Screenshot 2026-02-12 095952" src="https://github.com/user-attachments/assets/1223606f-2ef9-44a4-abe7-d4e11294cc49" />
 <img width="1604" height="959" alt="Screenshot 2026-02-12 100008" src="https://github.com/user-attachments/assets/146e3dbb-5161-4387-a362-023ef9e5836e" />
