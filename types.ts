@@ -2,17 +2,26 @@ export type DifficultyLevel = 'Low' | 'Moderate' | 'High';
 export type StressLevel = 'Low' | 'Moderate' | 'High';
 export type LearningPace = 'Slow' | 'Moderate' | 'Fast';
 
+export type PressureCategory = 'Critical' | 'High' | 'Moderate' | 'Low';
+
 export interface Subject {
   id: string;
   name: string;
   backlogChapters: number;
   deadline: string; // ISO date string
   difficulty: DifficultyLevel;
-  // Phase 2: Dynamic Metrics (computed at runtime)
+  
+  // Phase 2: Dynamic Metrics
   daysRemaining?: number;
   urgencyScore?: number;
   urgencyLabel?: string;
   urgencyColor?: string; // Tailwind class string
+
+  // Phase 3: Pressure Engine
+  difficultyWeight?: number;
+  pressureScore?: number;
+  pressureCategory?: PressureCategory;
+  pressureColor?: string; // Gradient class
 }
 
 export interface StudentProfile {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart } from 'lucide-react';
-import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus } from '../types';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap } from 'lucide-react';
+import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory } from '../types';
 
 const Engine: React.FC = () => {
   // --- Centralized State ---
@@ -59,7 +59,7 @@ const Engine: React.FC = () => {
         if (daysRemaining < 0) daysRemaining = 0;
       }
 
-      // Urgency Logic
+      // Urgency Logic (Inverse Relationship)
       if (daysRemaining <= 3) {
         urgencyScore = 1.0;
         urgencyLabel = 'Critical';
@@ -84,21 +84,100 @@ const Engine: React.FC = () => {
     });
   };
 
-  // Derived state for rendering (does not mutate original state persistence)
-  const analyzedSubjects = useMemo(() => calculateDeadlineMetrics(subjects), [subjects]);
+  // --- Phase 3: Pressure Scoring Engine ---
+  const calculatePressureMetrics = (timedSubjects: Subject[], profile: StudentProfile): Subject[] => {
+    // 1. Define Multipliers
+    const diffMap: Record<DifficultyLevel, number> = { 'Low': 1, 'Moderate': 1.5, 'High': 2 };
+    const stressMap: Record<StressLevel, number> = { 'Low': 0.9, 'Moderate': 1.0, 'High': 1.2 };
+    const paceMap: Record<LearningPace, number> = { 'Slow': 1.2, 'Moderate': 1.0, 'Fast': 0.85 };
 
-  // Summary Statistics
-  const summaryStats = useMemo(() => {
-    if (analyzedSubjects.length === 0) return null;
+    const stressMultiplier = stressMap[profile.stressLevel];
+    const paceMultiplier = paceMap[profile.learningPace];
+
+    // 2. Calculate Individual Scores
+    const scoredSubjects = timedSubjects.map(sub => {
+      const difficultyWeight = diffMap[sub.difficulty];
+      const backlogWeight = sub.backlogChapters * difficultyWeight;
+      
+      // Base pressure combines backlog size with time urgency
+      // Higher urgency (1.0) * High backlog = High Pressure
+      const basePressure = backlogWeight * (sub.urgencyScore || 0.2);
+      
+      // Apply profile modifiers
+      let pressureScore = basePressure * stressMultiplier * paceMultiplier;
+      
+      // Normalize slightly for readability (optional, but keeps numbers manageable)
+      // If pressureScore < 1, round to 1 for visual consistency
+      pressureScore = Math.max(1, parseFloat(pressureScore.toFixed(2)));
+
+      return {
+        ...sub,
+        difficultyWeight,
+        pressureScore
+      };
+    });
+
+    // 3. Determine Relative Categories (Dynamic Distribution)
+    // Sort by pressure score descending
+    const sortedScores = [...scoredSubjects].sort((a, b) => (b.pressureScore || 0) - (a.pressureScore || 0));
     
-    const mostUrgent = analyzedSubjects.reduce((prev, current) => 
-      (prev.daysRemaining ?? 999) < (current.daysRemaining ?? 999) ? prev : current
+    return scoredSubjects.map(sub => {
+      const rank = sortedScores.findIndex(s => s.id === sub.id);
+      const percentile = rank / sortedScores.length;
+
+      let category: PressureCategory = 'Low';
+      let color = 'from-emerald-400 to-emerald-600';
+
+      // Dynamic Categorization based on relative rank
+      // If single subject, it defaults based on score magnitude if we wanted, 
+      // but requirement says "Top 25% -> Critical"
+      if (percentile < 0.25) {
+        category = 'Critical';
+        color = 'from-red-500 to-rose-700';
+      } else if (percentile < 0.50) {
+        category = 'High';
+        color = 'from-orange-400 to-orange-600';
+      } else if (percentile < 0.75) {
+        category = 'Moderate';
+        color = 'from-yellow-400 to-yellow-600';
+      }
+
+      return {
+        ...sub,
+        pressureCategory: category,
+        pressureColor: color
+      };
+    });
+  };
+
+  // Chain the calculations: Input -> Time -> Pressure
+  const analyzedSubjects = useMemo(() => {
+    const timeMetrics = calculateDeadlineMetrics(subjects);
+    return calculatePressureMetrics(timeMetrics, studentProfile);
+  }, [subjects, studentProfile]);
+
+  // --- Analytics Aggregation ---
+  const pressureStats = useMemo(() => {
+    if (analyzedSubjects.length === 0) return null;
+
+    const totalPressure = analyzedSubjects.reduce((acc, curr) => acc + (curr.pressureScore || 0), 0);
+    const avgPressure = totalPressure / analyzedSubjects.length;
+    
+    const highestPressureSubject = analyzedSubjects.reduce((prev, curr) => 
+      (prev.pressureScore || 0) > (curr.pressureScore || 0) ? prev : curr
     );
 
-    const avgDays = Math.round(analyzedSubjects.reduce((acc, curr) => acc + (curr.daysRemaining || 0), 0) / analyzedSubjects.length);
-    const criticalCount = analyzedSubjects.filter(s => (s.daysRemaining || 0) <= 7).length;
-
-    return { mostUrgent, avgDays, criticalCount };
+    return {
+      total: totalPressure.toFixed(1),
+      avg: avgPressure.toFixed(1),
+      highest: highestPressureSubject,
+      distribution: {
+        critical: analyzedSubjects.filter(s => s.pressureCategory === 'Critical').length,
+        high: analyzedSubjects.filter(s => s.pressureCategory === 'High').length,
+        moderate: analyzedSubjects.filter(s => s.pressureCategory === 'Moderate').length,
+        low: analyzedSubjects.filter(s => s.pressureCategory === 'Low').length,
+      }
+    };
   }, [analyzedSubjects]);
 
   // --- Actions ---
@@ -133,22 +212,22 @@ const Engine: React.FC = () => {
     setStudentProfile(prev => ({ ...prev, [field]: value }));
   };
 
-  // --- Options ---
+  // --- Render Helpers ---
   const difficultyOptions: DifficultyLevel[] = ['Low', 'Moderate', 'High'];
   const stressOptions: StressLevel[] = ['Low', 'Moderate', 'High'];
   const paceOptions: LearningPace[] = ['Slow', 'Moderate', 'Fast'];
 
   return (
     <div className="min-h-screen pt-28 pb-32 px-4 md:px-8 bg-black bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-black to-black">
-      <div className="max-w-4xl mx-auto space-y-12">
+      <div className="max-w-5xl mx-auto space-y-12">
         
         {/* Header */}
         <div className="text-center space-y-3">
           <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">
-            Academic <span className="text-gradient">Intelligence</span>
+            Pressure <span className="text-gradient">Engine</span>
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base">
-            Input your workload. The engine analyzes deadlines and urgency in real-time.
+            Quantify your academic load. We calculate pressure based on urgency, difficulty, and your personal constraints.
           </p>
         </div>
 
@@ -177,13 +256,13 @@ const Engine: React.FC = () => {
                   exit={{ opacity: 0, height: 0, scale: 0.95 }}
                   className={`glass-panel p-5 rounded-xl border relative group transition-all overflow-hidden ${subject.urgencyColor ? subject.urgencyColor.replace('text-', 'border-').split(' ')[1] : 'border-white/10'}`}
                 >
-                  {/* Urgency Strip */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${subject.urgencyColor?.split(' ')[2].replace('/10','/80')}`}></div>
+                  {/* Pressure Gradient Border Left */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b ${subject.pressureColor}`}></div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start pl-3">
                     
-                    {/* Name & Urgency Label */}
-                    <div className="md:col-span-5 space-y-2">
+                    {/* Name & Indicators */}
+                    <div className="md:col-span-4 space-y-2">
                       <div className="flex justify-between items-center md:hidden">
                          <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded ${subject.urgencyColor?.split(' ')[2]} ${subject.urgencyColor?.split(' ')[0]}`}>
                            {subject.urgencyLabel}
@@ -201,14 +280,9 @@ const Engine: React.FC = () => {
                         />
                       </div>
                       <div className="hidden md:flex items-center gap-2 mt-1">
-                         <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded ${subject.urgencyColor?.split(' ')[2]} ${subject.urgencyColor?.split(' ')[0]}`}>
-                           {subject.urgencyLabel} Priority
+                         <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${subject.urgencyColor?.split(' ')[2].replace('/10','/5')} ${subject.urgencyColor?.replace('bg-','border-').split(' ')[1]} ${subject.urgencyColor?.split(' ')[0]}`}>
+                           {subject.urgencyLabel} Urgency
                          </span>
-                         {(subject.daysRemaining || 0) <= 3 && (
-                            <span className="flex items-center gap-1 text-[10px] text-red-400 animate-pulse">
-                              <AlertTriangle size={10} /> DANGER ZONE
-                            </span>
-                         )}
                       </div>
                     </div>
 
@@ -224,12 +298,12 @@ const Engine: React.FC = () => {
                       />
                     </div>
 
-                    {/* Deadline with Day Counter */}
+                    {/* Deadline */}
                     <div className="md:col-span-3 space-y-1.5">
                       <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider flex justify-between">
                         <span>Deadline</span>
                         {subject.deadline && (
-                          <span className={subject.urgencyColor?.split(' ')[0]}>{subject.daysRemaining} Days Left</span>
+                          <span className={subject.urgencyColor?.split(' ')[0]}>{subject.daysRemaining} Days</span>
                         )}
                       </label>
                       <input 
@@ -241,16 +315,27 @@ const Engine: React.FC = () => {
                       />
                     </div>
 
-                     {/* Difficulty */}
-                     <div className="md:col-span-2 space-y-1.5">
-                      <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">Difficulty</label>
-                      <select 
-                        value={subject.difficulty}
-                        onChange={(e) => updateSubjectField(subject.id, 'difficulty', e.target.value)}
-                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-red-500 transition-all cursor-pointer"
-                      >
-                        {difficultyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
+                     {/* Difficulty & Pressure Score (Phase 3 UI) */}
+                     <div className="md:col-span-3 flex gap-3">
+                        <div className="flex-1 space-y-1.5">
+                          <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">Difficulty</label>
+                          <select 
+                            value={subject.difficulty}
+                            onChange={(e) => updateSubjectField(subject.id, 'difficulty', e.target.value)}
+                            className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-red-500 transition-all cursor-pointer"
+                          >
+                            {difficultyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        </div>
+                        
+                        {/* Pressure Score Badge */}
+                        <div className="flex-1 space-y-1.5">
+                          <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider text-right block">Pressure</label>
+                          <div className={`w-full p-2.5 rounded-lg border border-white/5 bg-gradient-to-r ${subject.pressureColor} flex items-center justify-between shadow-lg`}>
+                             <span className="text-white font-bold text-sm drop-shadow-md">{subject.pressureScore}</span>
+                             <span className="text-[8px] text-white/90 font-mono uppercase bg-black/20 px-1.5 py-0.5 rounded">{subject.pressureCategory}</span>
+                          </div>
+                        </div>
                     </div>
                   </div>
 
@@ -270,7 +355,7 @@ const Engine: React.FC = () => {
                   <Layers className="text-gray-600" size={24} />
                 </div>
                 <h3 className="text-white text-sm font-medium mb-1">No Modules Active</h3>
-                <p className="text-gray-600 text-xs max-w-[200px] mb-4">Initialize at least one subject to enable the recovery engine.</p>
+                <p className="text-gray-600 text-xs max-w-[200px] mb-4">Initialize at least one subject to enable the pressure engine.</p>
                 <button onClick={addSubject} className="text-red-500 hover:text-red-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
                   <Plus size={12} /> Add First Module
                 </button>
@@ -279,46 +364,75 @@ const Engine: React.FC = () => {
           </div>
         </div>
 
-        {/* 2. DEADLINE SUMMARY SECTION (New Phase 2 Feature) */}
-        {summaryStats && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-4"
-          >
-            <div className="glass-panel p-4 rounded-xl border border-white/10 flex items-center gap-4">
-              <div className="p-3 bg-red-500/10 rounded-lg text-red-500">
-                <AlertCircle size={20} />
-              </div>
-              <div>
-                <p className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Most Urgent</p>
-                <p className="text-white font-bold text-sm truncate max-w-[150px]">{summaryStats.mostUrgent?.name || "None"}</p>
-                <p className="text-red-400 text-xs">{summaryStats.mostUrgent?.daysRemaining} days left</p>
-              </div>
+        {/* 2. ANALYTICS DASHBOARD (Phase 3) */}
+        {pressureStats && (
+          <div className="space-y-6">
+            <div className="flex items-end border-b border-white/10 pb-4">
+              <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
+                <BarChart className="text-red-500" size={18} />
+                Pressure Overview
+              </h2>
             </div>
+            
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-1 md:grid-cols-4 gap-4"
+            >
+              {/* Total Pressure */}
+              <div className="glass-panel p-5 rounded-xl border border-white/10 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-16 bg-red-600/5 rounded-full blur-xl group-hover:bg-red-600/10 transition-all"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                    <Activity size={14} /> <span className="text-[10px] font-mono uppercase tracking-wider">Total Load</span>
+                  </div>
+                  <p className="text-3xl font-display font-bold text-white">{pressureStats.total}</p>
+                  <p className="text-xs text-gray-500 mt-1">Cumulative Pressure Index</p>
+                </div>
+              </div>
 
-            <div className="glass-panel p-4 rounded-xl border border-white/10 flex items-center gap-4">
-              <div className="p-3 bg-blue-500/10 rounded-lg text-blue-500">
-                <BarChart size={20} />
+              {/* Peak Pressure */}
+              <div className="glass-panel p-5 rounded-xl border border-white/10 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-16 bg-orange-600/5 rounded-full blur-xl"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                    <AlertTriangle size={14} /> <span className="text-[10px] font-mono uppercase tracking-wider">Peak Source</span>
+                  </div>
+                  <p className="text-lg font-bold text-white truncate">{pressureStats.highest.name || "N/A"}</p>
+                  <p className="text-xs text-orange-400 mt-1">Score: {pressureStats.highest.pressureScore}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Avg Deadline</p>
-                <p className="text-white font-bold text-sm">{summaryStats.avgDays} Days</p>
-                <p className="text-gray-400 text-xs">Across {subjects.length} subjects</p>
-              </div>
-            </div>
 
-            <div className="glass-panel p-4 rounded-xl border border-white/10 flex items-center gap-4">
-              <div className="p-3 bg-orange-500/10 rounded-lg text-orange-500">
-                <TrendingUp size={20} />
+               {/* Avg Pressure */}
+               <div className="glass-panel p-5 rounded-xl border border-white/10 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-16 bg-blue-600/5 rounded-full blur-xl"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 text-gray-400 mb-2">
+                    <TrendingUp size={14} /> <span className="text-[10px] font-mono uppercase tracking-wider">Average Intensity</span>
+                  </div>
+                  <p className="text-3xl font-display font-bold text-white">{pressureStats.avg}</p>
+                  <p className="text-xs text-gray-500 mt-1">Per Subject</p>
+                </div>
               </div>
-              <div>
-                <p className="text-[10px] text-gray-500 uppercase font-mono tracking-wider">Critical Load</p>
-                <p className="text-white font-bold text-sm">{summaryStats.criticalCount} Subjects</p>
-                <p className="text-orange-400 text-xs">Due within 7 days</p>
+
+              {/* Distribution Bar */}
+              <div className="glass-panel p-5 rounded-xl border border-white/10 flex flex-col justify-center">
+                 <p className="text-[10px] font-mono uppercase tracking-wider text-gray-400 mb-3">Load Distribution</p>
+                 <div className="flex h-4 w-full rounded-full overflow-hidden bg-white/5">
+                    <div style={{width: `${(pressureStats.distribution.critical / subjects.length) * 100}%`}} className="h-full bg-red-600" title="Critical"></div>
+                    <div style={{width: `${(pressureStats.distribution.high / subjects.length) * 100}%`}} className="h-full bg-orange-500" title="High"></div>
+                    <div style={{width: `${(pressureStats.distribution.moderate / subjects.length) * 100}%`}} className="h-full bg-yellow-500" title="Moderate"></div>
+                    <div style={{width: `${(pressureStats.distribution.low / subjects.length) * 100}%`}} className="h-full bg-emerald-500" title="Low"></div>
+                 </div>
+                 <div className="flex justify-between text-[8px] text-gray-500 mt-2 font-mono uppercase">
+                    <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-600"></div>Crit</span>
+                    <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>High</span>
+                    <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>Mod</span>
+                    <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>Low</span>
+                 </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
         )}
 
         {/* 3. STUDENT PROFILE SECTION */}
@@ -326,7 +440,7 @@ const Engine: React.FC = () => {
           <div className="flex items-end border-b border-white/10 pb-4">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
               <Brain className="text-red-500" size={18} />
-              Student Profile
+              Student Context
             </h2>
           </div>
 
@@ -354,7 +468,7 @@ const Engine: React.FC = () => {
                {/* Learning Pace */}
                <div className="space-y-2">
                  <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider flex items-center gap-2">
-                   <Activity size={12} /> Learning Pace
+                   <Zap size={12} /> Learning Pace
                  </label>
                  <select 
                     value={studentProfile.learningPace}
@@ -368,7 +482,7 @@ const Engine: React.FC = () => {
                {/* Stress Level */}
                <div className="space-y-2">
                  <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider flex items-center gap-2">
-                   <AlertCircle size={12} /> Stress Level
+                   <Activity size={12} /> Stress Level
                  </label>
                  <select 
                     value={studentProfile.stressLevel}
@@ -385,7 +499,7 @@ const Engine: React.FC = () => {
 
         {/* 4. ACTION BAR (VALIDATION STATE) */}
         <div className="fixed bottom-0 left-0 w-full bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 z-40">
-          <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
              <div className="flex items-center gap-3">
                 <div className={`w-2 h-2 rounded-full ${status === CalculationStatus.VALID ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
                 <div>
