@@ -61,6 +61,35 @@ export interface AllocationMetrics {
   message: string;
 }
 
+// Phase 7: Weekly Execution Plan
+export type TaskType = 'Deep Work' | 'Revision' | 'Practice' | 'Buffer';
+
+export interface PlanTask {
+  id: string;
+  subjectId: string;
+  subjectName: string;
+  type: TaskType;
+  durationMinutes: number;
+  color: string;
+  isCompleted: boolean;
+}
+
+export interface DayPlan {
+  dayNumber: number;
+  label: string;
+  intensity: 'High' | 'Moderate' | 'Light' | 'Recovery';
+  tasks: PlanTask[];
+  totalMinutes: number;
+  bufferMinutes: number;
+}
+
+export interface WeeklyPlan {
+  days: DayPlan[];
+  totalWeeklyHours: number;
+  estimatedRecoveryDays: number;
+  highestDay: number;
+}
+
 export enum CalculationStatus {
   IDLE = 'IDLE',
   VALID = 'VALID',
@@ -74,6 +103,7 @@ export interface RecoveryPlan {
   generatedAt: string;
   metrics: RecoveryMetrics;
   allocation: AllocationMetrics;
+  weeklyPlan: WeeklyPlan;
 }
 
 export interface ContactForm {

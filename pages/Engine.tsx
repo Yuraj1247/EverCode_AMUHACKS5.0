@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass } from 'lucide-react';
-import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics } from '../types';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass, Coffee, RefreshCcw, Book, CalendarDays } from 'lucide-react';
+import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics, WeeklyPlan, DayPlan, PlanTask, TaskType } from '../types';
 
 const Engine: React.FC = () => {
   // --- Centralized State ---
@@ -12,6 +12,7 @@ const Engine: React.FC = () => {
     stressLevel: 'Moderate'
   });
   const [status, setStatus] = useState<CalculationStatus>(CalculationStatus.INVALID);
+  const [expandedDay, setExpandedDay] = useState<number | null>(null);
 
   // --- Validation Logic ---
   useEffect(() => {
@@ -221,21 +222,17 @@ const Engine: React.FC = () => {
 
   // --- Phase 6: Smart Time Allocation Engine ---
   const allocateTime = (subjects: Subject[], profile: StudentProfile): { allocatedSubjects: Subject[], metrics: AllocationMetrics } => {
-    // 1. Calculate Buffer
-    let bufferRate = 0.10; // Default 10%
+    let bufferRate = 0.10; 
     if (profile.stressLevel === 'High') bufferRate = 0.15;
     
     const bufferTime = Math.round((profile.availableHoursPerDay * bufferRate) * 100) / 100;
     const usableHours = profile.availableHoursPerDay - bufferTime;
 
-    // 2. Determine Constraints based on Learning Pace
-    let minPerSubject = 0.5; // 30 mins
-    if (profile.learningPace === 'Fast') minPerSubject = 0.25; // 15 mins for fast learners
-    if (profile.learningPace === 'Slow') minPerSubject = 0.75; // 45 mins for slow learners (reduce switching)
+    let minPerSubject = 0.5;
+    if (profile.learningPace === 'Fast') minPerSubject = 0.25;
+    if (profile.learningPace === 'Slow') minPerSubject = 0.75;
 
     const maxPerSubject = profile.availableHoursPerDay * 0.5;
-
-    // 3. Initial Proportional Distribution
     const totalPressure = subjects.reduce((acc, s) => acc + (s.pressureScore || 0), 0);
     
     let allocations = subjects.map(s => {
@@ -244,7 +241,6 @@ const Engine: React.FC = () => {
       return { ...s, tempHours: rawHours };
     });
 
-    // 4. Apply Min/Max Constraints (First Pass)
     allocations = allocations.map(s => {
       let h = s.tempHours;
       if (h < minPerSubject) h = minPerSubject;
@@ -252,12 +248,7 @@ const Engine: React.FC = () => {
       return { ...s, tempHours: h };
     });
 
-    // 5. Normalize if Total > Usable
-    // If applying minimums pushed us over budget, we prioritize top items or just scale down?
-    // The prompt implies respecting available hours is key. We will scale down to fit usable hours,
-    // even if it violates min constraint slightly for low priority items (preserves fairness).
     const currentTotal = allocations.reduce((acc, s) => acc + s.tempHours, 0);
-    
     if (currentTotal > usableHours) {
        const scaleFactor = usableHours / currentTotal;
        allocations = allocations.map(s => ({
@@ -266,29 +257,18 @@ const Engine: React.FC = () => {
        }));
     }
 
-    // 6. Rounding to 0.25h (15 mins)
     let finalAllocations = allocations.map(s => {
-      // Round to nearest 0.25
       let rounded = Math.round(s.tempHours * 4) / 4;
-      if (rounded < 0.25 && s.tempHours > 0) rounded = 0.25; // Hard floor of 15m if active
-      return {
-        ...s,
-        allocatedHours: rounded,
-      };
+      if (rounded < 0.25 && s.tempHours > 0) rounded = 0.25; 
+      return { ...s, allocatedHours: rounded };
     });
 
-    // 7. Final Sanity Check on Sum
-    // Rounding might cause slight overflow. 
-    // Sort by priority (rank) descending (high rank # means low priority) to shave off excess from bottom.
-    // Actually we want to sort by rank ascending (1 is top) to keep top safe.
-    // We want to remove time from lowest priority subjects (highest rank number).
     finalAllocations.sort((a, b) => (a.priorityRank || 0) - (b.priorityRank || 0));
 
     let finalSum = finalAllocations.reduce((acc, s) => acc + (s.allocatedHours || 0), 0);
     let diff = finalSum - usableHours;
 
     if (diff > 0) {
-       // Remove in 0.25 chunks from bottom up
        for (let i = finalAllocations.length - 1; i >= 0; i--) {
           if (diff <= 0.01) break;
           const sub = finalAllocations[i];
@@ -299,19 +279,14 @@ const Engine: React.FC = () => {
        }
     }
 
-    // Recalculate Sum and Percentages
     finalSum = finalAllocations.reduce((acc, s) => acc + (s.allocatedHours || 0), 0);
     const remainingTime = Math.max(0, profile.availableHoursPerDay - finalSum - bufferTime);
-
-    // Re-map to original order (optional, but good for UI stability if we sort back)
-    // Actually prioritizeSubjects already returns sorted by rank.
     
     const resultSubjects = finalAllocations.map(s => ({
       ...s,
       allocationPercentage: Math.round(((s.allocatedHours || 0) / profile.availableHoursPerDay) * 100)
     }));
 
-    // Metrics
     const maxSubject = resultSubjects.reduce((prev, current) => 
       (prev.allocatedHours || 0) > (current.allocatedHours || 0) ? prev : current
     );
@@ -327,32 +302,181 @@ const Engine: React.FC = () => {
         bufferTime: parseFloat(bufferTime.toFixed(2)),
         remainingTime: parseFloat(remainingTime.toFixed(2)),
         maxSubjectName: maxSubject.name,
-        isBalanced: (maxSubject.allocatedHours || 0) <= profile.availableHoursPerDay * 0.4, // heuristic
+        isBalanced: (maxSubject.allocatedHours || 0) <= profile.availableHoursPerDay * 0.4,
         message
       }
     };
   };
 
+  // --- Phase 7: Weekly Plan Generator ---
+  const generateWeeklyPlan = (subjects: Subject[], profile: StudentProfile): WeeklyPlan => {
+    // 1. Define Day Profiles (Load Curve)
+    const dayProfiles = [
+      { id: 1, label: 'Mon', intensity: 'Moderate' as const, multiplier: 1.0 },
+      { id: 2, label: 'Tue', intensity: 'Moderate' as const, multiplier: 1.0 },
+      { id: 3, label: 'Wed', intensity: 'High' as const, multiplier: 1.1 },
+      { id: 4, label: 'Thu', intensity: 'High' as const, multiplier: 1.1 },
+      { id: 5, label: 'Fri', intensity: 'Moderate' as const, multiplier: 0.9 },
+      { id: 6, label: 'Sat', intensity: 'Light' as const, multiplier: 0.7 },
+      { id: 7, label: 'Sun', intensity: 'Recovery' as const, multiplier: 0.5 },
+    ];
+
+    // Initialize Days
+    const weeklyPlan: DayPlan[] = dayProfiles.map(p => ({
+      dayNumber: p.id,
+      label: p.label,
+      intensity: p.intensity,
+      tasks: [],
+      totalMinutes: 0,
+      bufferMinutes: 0
+    }));
+
+    // 2. Determine Frequency based on Priority & Stress
+    const getFrequency = (tier?: PriorityTier) => {
+      let freq = 3;
+      if (tier === 'Critical Priority') freq = 6;
+      else if (tier === 'High Priority') freq = 5;
+      else if (tier === 'Medium Priority') freq = 4;
+      else freq = 3;
+
+      // Adjust for Stress: High stress means less switching, so maybe fewer days but focused blocks?
+      // Or spread out more thinly? Let's reduce frequency slightly to reduce context switching.
+      if (profile.stressLevel === 'High' && freq > 3) freq -= 1;
+      return freq;
+    };
+
+    // 3. Distribute Subjects
+    subjects.forEach(sub => {
+      if (!sub.allocatedHours || sub.allocatedHours <= 0) return;
+
+      const freq = getFrequency(sub.priorityTier);
+      const totalWeeklyMinutes = sub.allocatedHours * 7 * 60;
+      const targetDays = getTargetDays(freq, dayProfiles);
+      
+      const minutesPerSession = Math.floor(totalWeeklyMinutes / freq);
+
+      targetDays.forEach(dayIndex => {
+        const day = weeklyPlan[dayIndex];
+        
+        // Block Breakdown logic
+        // If session > 90 mins, split into Deep Work + Revision
+        if (minutesPerSession > 90) {
+           const deepWork = Math.floor(minutesPerSession * 0.6);
+           const revision = minutesPerSession - deepWork;
+           
+           day.tasks.push({
+             id: crypto.randomUUID(),
+             subjectId: sub.id,
+             subjectName: sub.name,
+             type: 'Deep Work',
+             durationMinutes: deepWork,
+             color: sub.urgencyColor || 'text-gray-500',
+             isCompleted: false
+           });
+           
+           day.tasks.push({
+             id: crypto.randomUUID(),
+             subjectId: sub.id,
+             subjectName: sub.name,
+             type: 'Revision',
+             durationMinutes: revision,
+             color: sub.urgencyColor || 'text-gray-500',
+             isCompleted: false
+           });
+        } else {
+           day.tasks.push({
+             id: crypto.randomUUID(),
+             subjectId: sub.id,
+             subjectName: sub.name,
+             type: minutesPerSession < 40 ? 'Practice' : 'Deep Work',
+             durationMinutes: minutesPerSession,
+             color: sub.urgencyColor || 'text-gray-500',
+             isCompleted: false
+           });
+        }
+        
+        day.totalMinutes += minutesPerSession;
+      });
+    });
+
+    // 4. Insert Buffers & Finalize
+    weeklyPlan.forEach((day, index) => {
+      const profile = dayProfiles[index];
+      const dailyCapMinutes = studentProfile.availableHoursPerDay * 60 * profile.multiplier;
+      
+      const bufferMins = Math.max(15, dailyCapMinutes - day.totalMinutes);
+      
+      // Explicitly add buffer task if enough time
+      if (bufferMins > 20) {
+        day.tasks.push({
+          id: 'buffer-' + day.dayNumber,
+          subjectId: 'system-buffer',
+          subjectName: 'Flexible Recovery',
+          type: 'Buffer',
+          durationMinutes: Math.floor(bufferMins),
+          color: 'text-gray-500',
+          isCompleted: false
+        });
+        day.bufferMinutes = Math.floor(bufferMins);
+        day.totalMinutes += Math.floor(bufferMins);
+      }
+    });
+
+    // 5. Recovery Forecast
+    const totalBacklog = subjects.reduce((acc, s) => acc + s.backlogChapters, 0);
+    // Heuristic: 1 hour of study clears 0.6 chapters on average (conservative)
+    const weeklyHours = weeklyPlan.reduce((acc, d) => acc + d.totalMinutes, 0) / 60;
+    const estimatedVelocity = weeklyHours * 0.6; 
+    const estimatedRecoveryDays = Math.ceil((totalBacklog / estimatedVelocity) * 7);
+
+    // Find highest workload day
+    const highestDay = weeklyPlan.reduce((max, d) => d.totalMinutes > max ? d.totalMinutes : max, 0);
+
+    return {
+      days: weeklyPlan,
+      totalWeeklyHours: parseFloat(weeklyHours.toFixed(1)),
+      estimatedRecoveryDays,
+      highestDay
+    };
+  };
+
+  // Helper for picking distributed days
+  const getTargetDays = (freq: number, profiles: any[]) => {
+    // Indices 0-6
+    if (freq >= 7) return [0,1,2,3,4,5,6];
+    if (freq === 6) return [0,1,2,3,4,5]; // Skip Sun
+    if (freq === 5) return [0,1,2,3,4]; // Skip Sat, Sun
+    if (freq === 4) return [0,1,2,3]; // Mon-Thu peak
+    if (freq === 3) return [0,2,4]; // Mon, Wed, Fri
+    if (freq === 2) return [1,3]; // Tue, Thu
+    return [0];
+  };
+
   // --- Main Computation Chain ---
-  const { analyzedSubjects, prioritizedSubjects, recoveryMetrics, allocationData } = useMemo(() => {
+  const { analyzedSubjects, prioritizedSubjects, recoveryMetrics, allocationData, weeklyPlan } = useMemo(() => {
     const timeMetrics = calculateDeadlineMetrics(subjects);
     const pressureMetrics = calculatePressureMetrics(timeMetrics, studentProfile);
     
     let prioritized: Subject[] = [];
     let recovery: RecoveryMetrics | null = null;
     let allocation: { allocatedSubjects: Subject[], metrics: AllocationMetrics } | null = null;
+    let plan: WeeklyPlan | null = null;
 
     if (subjects.length > 0) {
       prioritized = prioritizeSubjects(pressureMetrics);
       recovery = calculateRecoveryDifficulty(pressureMetrics, studentProfile);
       allocation = allocateTime(prioritized, studentProfile);
+      if (allocation) {
+        plan = generateWeeklyPlan(allocation.allocatedSubjects, studentProfile);
+      }
     }
 
     return { 
       analyzedSubjects: pressureMetrics, 
-      prioritizedSubjects: allocation ? allocation.allocatedSubjects : prioritized, // Use the one with allocated hours
+      prioritizedSubjects: allocation ? allocation.allocatedSubjects : prioritized,
       recoveryMetrics: recovery,
-      allocationData: allocation
+      allocationData: allocation,
+      weeklyPlan: plan
     };
   }, [subjects, studentProfile]);
 
@@ -456,6 +580,16 @@ const Engine: React.FC = () => {
       case 'High Priority': return 'bg-orange-500 text-white';
       case 'Medium Priority': return 'bg-yellow-500 text-black';
       default: return 'bg-gray-700 text-gray-300';
+    }
+  };
+
+  const getTaskIcon = (type: TaskType) => {
+    switch(type) {
+      case 'Deep Work': return <Brain size={14} className="text-red-400" />;
+      case 'Revision': return <RefreshCcw size={14} className="text-blue-400" />;
+      case 'Practice': return <Book size={14} className="text-yellow-400" />;
+      case 'Buffer': return <Coffee size={14} className="text-green-400" />;
+      default: return <Activity size={14} />;
     }
   };
 
@@ -748,79 +882,92 @@ const Engine: React.FC = () => {
           </div>
         )}
 
-        {/* 4. DAILY STUDY DISTRIBUTION (Phase 6) */}
-        {allocationData && (
+        {/* 4. WEEKLY RECOVERY PLAN (Phase 7) */}
+        {weeklyPlan && (
           <div className="space-y-6">
-             <div className="flex items-end border-b border-white/10 pb-4">
+            <div className="flex items-end border-b border-white/10 pb-4">
               <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
-                <PieChart className="text-red-500" size={18} />
-                Daily Study Distribution
+                <CalendarDays className="text-red-500" size={18} />
+                7-Day Recovery Plan
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-2 space-y-4">
-                {allocationData.allocatedSubjects
-                  .filter(s => (s.allocatedHours || 0) > 0)
-                  .map((subject, idx) => (
-                    <motion.div
-                      key={subject.id}
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: "100%" }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="glass-panel p-4 rounded-lg border border-white/5"
-                    >
-                       <div className="flex justify-between items-center mb-2">
-                         <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${subject.priorityTier === 'Critical Priority' ? 'bg-red-500' : 'bg-gray-500'}`}></span>
-                            <span className="text-sm font-bold text-white">{subject.name}</span>
-                         </div>
-                         <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400">{subject.allocationPercentage}%</span>
-                            <span className="text-sm font-mono font-bold text-white bg-white/5 px-2 py-0.5 rounded">{subject.allocatedHours}h</span>
-                         </div>
-                       </div>
-                       
-                       {/* Allocation Bar */}
-                       <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${subject.allocationPercentage}%` }}
-                            className={`h-full ${subject.priorityTier === 'Critical Priority' ? 'bg-gradient-to-r from-red-600 to-red-400' : 'bg-gradient-to-r from-gray-600 to-gray-400'}`}
-                          />
-                       </div>
-                    </motion.div>
-                ))}
-              </div>
-
-              {/* Allocation Summary Stats */}
-              <div className="glass-panel p-6 rounded-xl border border-white/10 flex flex-col justify-between">
+            {/* Recovery Forecast Header */}
+            <div className="glass-panel p-6 rounded-xl border border-white/10 bg-gradient-to-r from-red-900/20 to-black">
+               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                  <div>
-                    <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Hourglass size={16}/> Daily Overview</h3>
-                    <div className="space-y-4">
-                       <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
-                          <span className="text-xs text-gray-400 uppercase tracking-wider">Total Allocated</span>
-                          <span className="font-bold text-white">{allocationData.metrics.totalAllocated}h</span>
-                       </div>
-                       <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/5">
-                          <span className="text-xs text-gray-400 uppercase tracking-wider">Buffer Time</span>
-                          <span className="font-bold text-gray-300">{allocationData.metrics.bufferTime}h</span>
-                       </div>
-                       {allocationData.metrics.remainingTime > 0 && (
-                          <div className="flex justify-between items-center p-3 bg-emerald-900/10 border border-emerald-500/20 rounded-lg">
-                             <span className="text-xs text-emerald-400 uppercase tracking-wider">Free Time</span>
-                             <span className="font-bold text-emerald-400">{allocationData.metrics.remainingTime}h</span>
-                          </div>
-                       )}
+                    <h3 className="text-xl font-bold text-white mb-2">Estimated Recovery Timeline</h3>
+                    <p className="text-gray-400 text-sm">Based on your current backlog and allocated hours.</p>
+                 </div>
+                 <div className="flex items-center gap-6">
+                    <div className="text-center">
+                       <span className="block text-3xl font-display font-bold text-white">{weeklyPlan.estimatedRecoveryDays}</span>
+                       <span className="text-xs text-gray-500 uppercase tracking-widest">Days to Clear</span>
+                    </div>
+                    <div className="w-px h-10 bg-white/10"></div>
+                    <div className="text-center">
+                       <span className="block text-3xl font-display font-bold text-white">{weeklyPlan.totalWeeklyHours}</span>
+                       <span className="text-xs text-gray-500 uppercase tracking-widest">Weekly Hours</span>
                     </div>
                  </div>
+               </div>
+            </div>
 
-                 <div className="mt-8 pt-6 border-t border-white/5">
-                    <p className="text-sm text-gray-400 italic">
-                      "{allocationData.metrics.message}"
-                    </p>
-                 </div>
-              </div>
+            {/* Daily Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+               {weeklyPlan.days.map((day) => (
+                 <motion.div
+                   key={day.dayNumber}
+                   initial={{ opacity: 0, scale: 0.95 }}
+                   animate={{ opacity: 1, scale: 1 }}
+                   transition={{ delay: day.dayNumber * 0.05 }}
+                   className={`glass-panel p-4 rounded-xl border border-white/5 flex flex-col h-full ${day.intensity === 'Recovery' ? 'opacity-80' : ''}`}
+                 >
+                    <div className="flex justify-between items-center mb-4 pb-2 border-b border-white/5">
+                       <div>
+                          <span className="text-xs text-red-500 font-bold uppercase tracking-widest block">Day {day.dayNumber}</span>
+                          <span className="text-lg font-bold text-white">{day.label}</span>
+                       </div>
+                       <div className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${
+                         day.intensity === 'High' ? 'border-red-500/30 text-red-400 bg-red-900/10' :
+                         day.intensity === 'Recovery' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-900/10' :
+                         'border-gray-500/30 text-gray-400'
+                       }`}>
+                          {day.intensity}
+                       </div>
+                    </div>
+
+                    <div className="space-y-2 flex-1">
+                       {day.tasks.length === 0 ? (
+                         <div className="h-full flex items-center justify-center text-gray-600 text-xs italic">
+                           Rest Day
+                         </div>
+                       ) : (
+                         day.tasks.map((task) => (
+                           <div key={task.id} className="bg-white/5 rounded-lg p-2.5 hover:bg-white/10 transition-colors border-l-2" style={{ borderLeftColor: task.type === 'Buffer' ? '#10B981' : 'currentColor' }}>
+                              <div className="flex justify-between items-start mb-1">
+                                 <span className={`text-xs font-bold truncate max-w-[70%] ${task.type === 'Buffer' ? 'text-emerald-400' : 'text-gray-200'}`}>
+                                   {task.subjectName}
+                                 </span>
+                                 <span className="text-[10px] text-gray-500 font-mono bg-black/30 px-1 rounded">
+                                   {task.durationMinutes}m
+                                 </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                 {getTaskIcon(task.type)}
+                                 <span className="text-[10px] text-gray-500 uppercase tracking-wide">{task.type}</span>
+                              </div>
+                           </div>
+                         ))
+                       )}
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center text-xs text-gray-500 font-mono">
+                       <span>Total: {(day.totalMinutes / 60).toFixed(1)}h</span>
+                       {day.bufferMinutes > 0 && <span className="text-emerald-500/80">Buffer: {day.bufferMinutes}m</span>}
+                    </div>
+                 </motion.div>
+               ))}
             </div>
           </div>
         )}
