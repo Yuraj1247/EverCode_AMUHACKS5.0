@@ -46,7 +46,7 @@ const Landing: React.FC = () => {
             transition={{ duration: 0.8 }}
           >
             <div className="inline-block px-4 py-1 mb-6 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm text-red-400 text-xs font-mono uppercase tracking-widest">
-              Updated for 2024
+              Backlog Recovery Mentor
             </div>
             <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold tracking-tighter mb-6 leading-tight">
               GET BACK ON <br />

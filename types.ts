@@ -1,3 +1,4 @@
+
 export type DifficultyLevel = 'Low' | 'Moderate' | 'High';
 export type StressLevel = 'Low' | 'Moderate' | 'High';
 export type LearningPace = 'Slow' | 'Moderate' | 'Fast';
@@ -77,6 +78,7 @@ export interface PlanTask {
 
 export interface DayPlan {
   dayNumber: number;
+  dateString: string; // ISO Date String YYYY-MM-DD
   label: string;
   intensity: 'High' | 'Moderate' | 'Light' | 'Recovery';
   tasks: PlanTask[];
@@ -102,6 +104,15 @@ export interface AdaptiveMetrics {
   mostChallengingSubject: string;
 }
 
+export interface StudyMaterial {
+  id: string;
+  title: string;
+  type: 'PDF' | 'Image' | 'Note';
+  fileUrl: string; // Object URL or placeholder
+  fileName: string;
+  createdAt: string;
+}
+
 export interface EngineResults {
   prioritizedSubjects: Subject[];
   recoveryMetrics: RecoveryMetrics;
@@ -115,6 +126,7 @@ export interface RecoverySession {
   subjects: Subject[];
   profile: StudentProfile;
   results: EngineResults | null;
+  materials: StudyMaterial[]; // New
   history: {
     completionRates: number[];
     stressLevels: StressLevel[];

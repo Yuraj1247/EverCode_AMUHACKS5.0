@@ -30,7 +30,7 @@ const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
         <Link to="/" className="flex items-center gap-2 group">
           <Activity className="w-8 h-8 text-red-600 group-hover:animate-pulse" />
-          <span className="font-display font-bold text-2xl tracking-tight text-white">RECAP</span>
+          <span className="font-display font-bold text-2xl tracking-tight text-white">RECAP AI</span>
         </Link>
 
         <div className="hidden md:flex items-center gap-8">

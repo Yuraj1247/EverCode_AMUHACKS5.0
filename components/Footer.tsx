@@ -55,7 +55,7 @@ const Footer: React.FC = () => {
         </div>
         
         <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-gray-600 text-xs">© 2024 RECAP Inc. All rights reserved.</p>
+          <p className="text-gray-600 text-xs">© 2026 RECAP Inc. All rights reserved.</p>
           <p className="text-gray-700 text-xs">Made with care for students everywhere.</p>
         </div>
       </div>

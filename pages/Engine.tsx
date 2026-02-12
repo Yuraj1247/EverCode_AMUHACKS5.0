@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart as BarChartIcon, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass, Coffee, RefreshCcw, Book, CalendarDays, RotateCcw, Save, Check, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
-import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics, WeeklyPlan, DayPlan, PlanTask, TaskType, EngineResults, RecoverySession, TaskStatus, AdaptiveMetrics } from '../types';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart as BarChartIcon, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass, Coffee, RefreshCcw, Book, CalendarDays, RotateCcw, Save, Check, XCircle, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Download, Upload, Play, Pause, Square, ChevronLeft, ChevronRight, Eye, Wind, Timer, StopCircle } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart as RechartsPie, Pie, AreaChart, Area, CartesianGrid, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
+import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics, WeeklyPlan, DayPlan, PlanTask, TaskType, EngineResults, RecoverySession, TaskStatus, AdaptiveMetrics, StudyMaterial } from '../types';
 
 const Engine: React.FC = () => {
+  type TabType = 'generator' | 'calendar' | 'materials' | 'tools' | 'analytics';
+  const [activeTab, setActiveTab] = useState<TabType>('generator');
+
   // --- Centralized State ---
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [studentProfile, setStudentProfile] = useState<StudentProfile>({
@@ -16,6 +19,7 @@ const Engine: React.FC = () => {
   // Results State (Persisted)
   const [results, setResults] = useState<EngineResults | null>(null);
   const [history, setHistory] = useState<{ completionRates: number[], stressLevels: StressLevel[] }>({ completionRates: [], stressLevels: [] });
+  const [materials, setMaterials] = useState<StudyMaterial[]>([]);
 
   // UI State
   const [status, setStatus] = useState<CalculationStatus>(CalculationStatus.INVALID);
@@ -24,8 +28,29 @@ const Engine: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showRebalance, setShowRebalance] = useState(false);
 
+  // Calendar State
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<string | null>(new Date().toISOString().split('T')[0]);
+
+  // Materials State
+  const [newMaterialTitle, setNewMaterialTitle] = useState('');
+  const [tempFile, setTempFile] = useState<File | null>(null); // New state for selected file
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Tools State
+  const [activeTool, setActiveTool] = useState<'pomodoro' | 'stopwatch' | 'breathing'>('pomodoro');
+  
+  // Pomodoro
+  const [timerTime, setTimerTime] = useState(25 * 60);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [timerMode, setTimerMode] = useState<'Work' | 'Break'>('Work');
+
+  // Stopwatch
+  const [stopwatchTime, setStopwatchTime] = useState(0);
+  const [isStopwatchRunning, setIsStopwatchRunning] = useState(false);
+
   // --- Persistence Logic ---
-  const SESSION_KEY = 'recap_recovery_session_v2';
+  const SESSION_KEY = 'recap_recovery_session_v3';
 
   // Load Session
   useEffect(() => {
@@ -37,6 +62,7 @@ const Engine: React.FC = () => {
         if (parsed.profile) setStudentProfile(parsed.profile);
         if (parsed.results) setResults(parsed.results);
         if (parsed.history) setHistory(parsed.history);
+        if (parsed.materials) setMaterials(parsed.materials);
         setLastSaved(new Date().toLocaleTimeString());
       } catch (e) {
         console.error("Failed to load session", e);
@@ -53,12 +79,44 @@ const Engine: React.FC = () => {
       subjects,
       profile: studentProfile,
       results,
+      materials,
       history
     };
     
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     setLastSaved(new Date().toLocaleTimeString());
-  }, [subjects, studentProfile, results, history, isLoaded]);
+  }, [subjects, studentProfile, results, history, materials, isLoaded]);
+
+  // Pomodoro Timer Effect
+  useEffect(() => {
+    let interval: any = null;
+    if (isTimerRunning && timerTime > 0) {
+      interval = setInterval(() => {
+        setTimerTime((prev) => prev - 1);
+      }, 1000);
+    } else if (timerTime === 0) {
+      setIsTimerRunning(false);
+      if (timerMode === 'Work') {
+        setTimerMode('Break');
+        setTimerTime(5 * 60);
+      } else {
+        setTimerMode('Work');
+        setTimerTime(25 * 60);
+      }
+    }
+    return () => clearInterval(interval);
+  }, [isTimerRunning, timerTime, timerMode]);
+
+  // Stopwatch Effect
+  useEffect(() => {
+    let interval: any = null;
+    if (isStopwatchRunning) {
+        interval = setInterval(() => {
+            setStopwatchTime(prev => prev + 1);
+        }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isStopwatchRunning]);
 
   // --- Validation Logic ---
   useEffect(() => {
@@ -96,8 +154,21 @@ const Engine: React.FC = () => {
     return `${minutes}m`;
   };
 
+  const formatSeconds = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const formatStopwatch = (seconds: number) => {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
   // --- Core Engine Logic Functions ---
-  
+  // (Identical to previous logic, kept for functionality)
   const calculateDeadlineMetrics = (rawSubjects: Subject[]): Subject[] => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -288,24 +359,46 @@ const Engine: React.FC = () => {
   };
 
   const generateWeeklyPlan = (subjects: Subject[], profile: StudentProfile): WeeklyPlan => {
-    const dayProfiles = [
-      { id: 1, label: 'Mon', intensity: 'Moderate' as const, multiplier: 1.0 },
-      { id: 2, label: 'Tue', intensity: 'Moderate' as const, multiplier: 1.0 },
-      { id: 3, label: 'Wed', intensity: 'High' as const, multiplier: 1.1 },
-      { id: 4, label: 'Thu', intensity: 'High' as const, multiplier: 1.1 },
-      { id: 5, label: 'Fri', intensity: 'Moderate' as const, multiplier: 0.9 },
-      { id: 6, label: 'Sat', intensity: 'Light' as const, multiplier: 0.7 },
-      { id: 7, label: 'Sun', intensity: 'Recovery' as const, multiplier: 0.5 },
-    ];
+    // Dynamic Day Generation Starting Tomorrow
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() + 1); // Tomorrow
 
-    const weeklyPlan: DayPlan[] = dayProfiles.map(p => ({
-      dayNumber: p.id,
-      label: p.label,
-      intensity: p.intensity,
-      tasks: [],
-      totalMinutes: 0,
-      bufferMinutes: 0
-    }));
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    
+    const getDayProfile = (date: Date) => {
+        const day = date.getDay();
+        // 0=Sun, 6=Sat
+        if (day === 0) return { intensity: 'Recovery' as const, multiplier: 0.5 };
+        if (day === 6) return { intensity: 'Light' as const, multiplier: 0.7 };
+        if (day === 3 || day === 4) return { intensity: 'High' as const, multiplier: 1.1 }; // Wed, Thu
+        return { intensity: 'Moderate' as const, multiplier: 1.0 }; // Mon, Tue, Fri
+    };
+
+    const weeklyPlan: DayPlan[] = [];
+    const dailyMultipliers: number[] = [];
+    const planDates: Date[] = [];
+
+    // Generate 7 days
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(startDate);
+        d.setDate(startDate.getDate() + i);
+        planDates.push(d);
+        
+        const { intensity, multiplier } = getDayProfile(d);
+        dailyMultipliers.push(multiplier);
+        
+        const label = `${daysOfWeek[d.getDay()]}, ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        
+        weeklyPlan.push({
+            dayNumber: i + 1,
+            dateString: d.toISOString().split('T')[0], // Store ISO date
+            label,
+            intensity,
+            tasks: [],
+            totalMinutes: 0,
+            bufferMinutes: 0
+        });
+    }
 
     const getFrequency = (tier?: PriorityTier) => {
       let freq = 3;
@@ -317,6 +410,7 @@ const Engine: React.FC = () => {
     };
     
     const getTargetDays = (freq: number) => {
+      // Return indices [0..6] based on frequency
       if (freq >= 7) return [0,1,2,3,4,5,6];
       if (freq === 6) return [0,1,2,3,4,5]; 
       if (freq === 5) return [0,1,2,3,4]; 
@@ -326,7 +420,10 @@ const Engine: React.FC = () => {
       return [0];
     };
 
-    subjects.forEach(sub => {
+    // Sort subjects by priority to ensure high value items get the slots first
+    const sortedSubjects = [...subjects].sort((a, b) => (a.priorityRank || 99) - (b.priorityRank || 99));
+
+    sortedSubjects.forEach(sub => {
       if (!sub.allocatedHours || sub.allocatedHours <= 0) return;
 
       const freq = getFrequency(sub.priorityTier);
@@ -336,8 +433,28 @@ const Engine: React.FC = () => {
       const minutesPerSession = Math.floor(totalWeeklyMinutes / freq);
 
       targetDays.forEach(dayIndex => {
+        // Enforce Deadline: Do not schedule if day > deadline
+        const sessionDate = planDates[dayIndex];
+        const subDeadline = new Date(sub.deadline);
+        subDeadline.setHours(23, 59, 59, 999);
+        
+        if (sessionDate > subDeadline) return;
+
         const day = weeklyPlan[dayIndex];
         
+        // --- STRICT CAPACITY CHECK ---
+        const dailyCap = profile.availableHoursPerDay * 60 * dailyMultipliers[dayIndex];
+        const remainingMinutes = dailyCap - day.totalMinutes;
+        
+        if (remainingMinutes < 15) return; // Day is effectively full
+
+        let actualDuration = minutesPerSession;
+        if (actualDuration > remainingMinutes) {
+            actualDuration = Math.floor(remainingMinutes);
+        }
+        
+        if (actualDuration < 15) return; // Too short to be meaningful
+
         const addTask = (type: TaskType, duration: number) => {
           day.tasks.push({
             id: crypto.randomUUID(),
@@ -350,40 +467,41 @@ const Engine: React.FC = () => {
           });
         };
 
-        if (minutesPerSession > 90) {
-           const deepWork = Math.floor(minutesPerSession * 0.6);
+        if (actualDuration > 90) {
+           const deepWork = Math.floor(actualDuration * 0.6);
            addTask('Deep Work', deepWork);
-           addTask('Revision', minutesPerSession - deepWork);
+           addTask('Revision', actualDuration - deepWork);
         } else {
-           addTask(minutesPerSession < 40 ? 'Practice' : 'Deep Work', minutesPerSession);
+           addTask(actualDuration < 40 ? 'Practice' : 'Deep Work', actualDuration);
         }
         
-        day.totalMinutes += minutesPerSession;
+        day.totalMinutes += actualDuration;
       });
     });
 
-    // Add buffers
+    // Add buffers (Catch-up Time) if space allows
     weeklyPlan.forEach((day, index) => {
-      const profileData = dayProfiles[index];
-      const dailyCapMinutes = profile.availableHoursPerDay * 60 * profileData.multiplier;
-      const bufferMins = Math.max(15, dailyCapMinutes - day.totalMinutes);
+      const multiplier = dailyMultipliers[index];
+      const dailyCapMinutes = profile.availableHoursPerDay * 60 * multiplier;
+      
+      const bufferMins = Math.floor(Math.max(0, dailyCapMinutes - day.totalMinutes));
       
       if (bufferMins > 20) {
         day.tasks.push({
           id: 'buffer-' + day.dayNumber,
           subjectId: 'system-buffer',
-          subjectName: 'Catch-up Time', // CHANGED: Simple terminology
+          subjectName: 'Catch-up Time',
           type: 'Buffer',
-          durationMinutes: Math.floor(bufferMins),
+          durationMinutes: bufferMins,
           color: 'text-gray-500',
           status: 'Pending'
         });
-        day.bufferMinutes = Math.floor(bufferMins);
-        day.totalMinutes += Math.floor(bufferMins);
+        day.bufferMinutes = bufferMins;
+        day.totalMinutes += bufferMins;
       }
     });
 
-    // Simple Initial Forecast (will be updated by adaptive module)
+    // Simple Initial Forecast
     const totalBacklog = subjects.reduce((acc, s) => acc + s.backlogChapters, 0);
     const weeklyHours = weeklyPlan.reduce((acc, d) => acc + d.totalMinutes, 0) / 60;
     const estimatedVelocity = weeklyHours * 0.6; 
@@ -490,9 +608,6 @@ const Engine: React.FC = () => {
                 adaptiveMetrics: adaptive,
                 generatedAt: new Date().toISOString()
             });
-
-            // Update history only on fresh generation if needed, or leave for weekly cycles
-            window.scrollTo({ top: 800, behavior: 'smooth' });
         }
         
         setIsGenerating(false);
@@ -505,7 +620,10 @@ const Engine: React.FC = () => {
     if (!results) return;
 
     const newPlan = { ...results.weeklyPlan };
-    const task = newPlan.days[dayIndex].tasks.find(t => t.id === taskId);
+    const day = newPlan.days.find(d => d.dayNumber === dayIndex || (d as any).originalIndex === dayIndex);
+    if (!day) return;
+
+    const task = day.tasks.find(t => t.id === taskId);
     
     if (task) {
         // Toggle Logic: Pending -> Completed -> Missed -> Pending
@@ -548,13 +666,8 @@ const Engine: React.FC = () => {
         });
 
         // Redistribute missed tasks to future days (simple round robin for demo)
-        // Only redistribute to days that are NOT today (assuming day 0 is today for simplicity, or just distribute to all)
-        // In a real app we know "today", here we just push to next available slots
         let dayIdx = 0;
         missedTasks.forEach(task => {
-            // Find a day with capacity (simplified: just simple distribution)
-            // Limit: max 110% of capacity. 
-            // Demo logic: Just push to next days
             const targetDay = newPlan.days[(dayIdx % 6) + 1]; // Avoid day 0 if possible
             targetDay.tasks.splice(0, 0, { ...task, subjectName: `(Rescheduled) ${task.subjectName}`, color: 'text-orange-400' });
             targetDay.totalMinutes += task.durationMinutes;
@@ -609,9 +722,43 @@ const Engine: React.FC = () => {
         setStudentProfile({ availableHoursPerDay: 4, learningPace: 'Moderate', stressLevel: 'Moderate' });
         setResults(null);
         setHistory({ completionRates: [], stressLevels: [] });
+        setMaterials([]);
         localStorage.removeItem(SESSION_KEY);
         setStatus(CalculationStatus.INVALID);
     }
+  };
+
+  // Handles just file selection, doesn't add yet
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+        setTempFile(e.target.files[0]);
+    }
+  };
+
+  // Explicit Add Material Action
+  const addMaterial = () => {
+      if (!newMaterialTitle || !tempFile) return;
+
+      const type = tempFile.type.includes('image') ? 'Image' : tempFile.type.includes('pdf') ? 'PDF' : 'Note';
+      const newMat: StudyMaterial = {
+        id: crypto.randomUUID(),
+        title: newMaterialTitle,
+        type: type as any,
+        fileName: tempFile.name,
+        fileUrl: URL.createObjectURL(tempFile), // For demo only
+        createdAt: new Date().toLocaleDateString()
+      };
+
+      setMaterials([...materials, newMat]);
+      
+      // Reset Inputs
+      setNewMaterialTitle('');
+      setTempFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const deleteMaterial = (id: string) => {
+    setMaterials(materials.filter(m => m.id !== id));
   };
 
   // Reactive Analysis (Visuals only)
@@ -639,37 +786,31 @@ const Engine: React.FC = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen pt-28 pb-32 px-4 md:px-8 bg-black bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-black to-black">
-      <div className="max-w-6xl mx-auto space-y-12">
-        
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="text-center md:text-left space-y-2">
-                <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">
-                    Adaptive <span className="text-gradient">Intelligence</span>
-                </h1>
-                <p className="text-gray-400 max-w-lg text-sm md:text-base">
-                    Input your academic data. The system continuously adapts your recovery plan based on your progress and stress.
-                </p>
-            </div>
-            
-            <div className="flex flex-col items-end gap-2">
-                 <button onClick={resetSession} className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-gray-400 hover:text-red-500 hover:border-red-500/30 transition-all">
-                    <RotateCcw size={14} /> Start Fresh
-                 </button>
-                 {lastSaved && (
-                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-mono bg-black/40 px-3 py-1 rounded-full border border-white/5">
-                        <Check size={10} className="text-emerald-500" />
-                        SYSTEM SYNCHRONIZED {lastSaved}
-                     </div>
-                 )}
-            </div>
-        </div>
+  // --- Render Functions ---
 
-        {/* 1. INPUT SECTION */}
-        <div className="space-y-6">
-          <div className="flex justify-between items-end border-b border-white/10 pb-4">
+  const renderTabs = () => (
+    <div className="flex overflow-x-auto pb-2 gap-2 mb-8 border-b border-white/10 no-scrollbar">
+      {[
+        { id: 'generator', label: 'Plan Generator', icon: <Layers size={16} /> },
+        { id: 'calendar', label: 'Calendar', icon: <Calendar size={16} /> },
+        { id: 'materials', label: 'Study Materials', icon: <BookOpen size={16} /> },
+        { id: 'tools', label: 'Focus Tools', icon: <Clock size={16} /> },
+        { id: 'analytics', label: 'Analytics', icon: <BarChartIcon size={16} /> },
+      ].map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id as TabType)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white/10 text-white border-b-2 border-red-500' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+        >
+          {tab.icon} {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderGenerator = () => (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+       <div className="flex justify-between items-end border-b border-white/10 pb-4">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
               <Layers className="text-red-500" size={18} />
               Academic Workload
@@ -699,7 +840,7 @@ const Engine: React.FC = () => {
                       </div>
                     </div>
                     <div className="md:col-span-2 space-y-1.5">
-                      <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">Chapters</label>
+                      <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">Backlog Chapters</label>
                       <input type="number" min="1" value={subject.backlogChapters} onChange={(e) => updateSubjectField(subject.id, 'backlogChapters', parseInt(e.target.value) || 0)} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-red-500 text-center font-mono" />
                     </div>
                     <div className="md:col-span-3 space-y-1.5">
@@ -736,175 +877,8 @@ const Engine: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
 
-        {/* 2. ADAPTIVE ANALYTICS DASHBOARD (Module 7) */}
-        {results?.adaptiveMetrics && (
-           <div className="space-y-6">
-              <div className="flex items-end border-b border-white/10 pb-4">
-                <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
-                    <BarChartIcon className="text-red-500" size={18} />
-                    Adaptive Analytics
-                </h2>
-              </div>
-
-              {/* Module 4: Burnout Alert */}
-              {results.adaptiveMetrics.burnoutRisk && (
-                  <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl flex items-center gap-4 animate-pulse-slow">
-                     <AlertTriangle className="text-red-500" size={24} />
-                     <div>
-                        <h4 className="text-red-400 font-bold text-sm">Burnout Risk Detected</h4>
-                        <p className="text-gray-400 text-xs">High stress coupled with low completion rate. Workload automatically reduced by 15%.</p>
-                     </div>
-                  </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                 {/* Progress Card (Module 2) */}
-                 <div className="glass-panel p-6 rounded-xl border border-white/10 relative overflow-hidden">
-                    <h3 className="text-xs text-gray-500 uppercase font-mono mb-2">Completion Rate</h3>
-                    <div className="flex items-end gap-2 mb-2">
-                        <span className="text-3xl font-bold text-white">{results.adaptiveMetrics.completionRate}%</span>
-                        <span className="text-xs text-gray-500 mb-1">Weekly Avg</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all duration-500 ${results.adaptiveMetrics.completionRate > 80 ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${results.adaptiveMetrics.completionRate}%` }}></div>
-                    </div>
-                 </div>
-
-                 {/* Stress Trend (Module 3) */}
-                 <div className="glass-panel p-6 rounded-xl border border-white/10">
-                    <h3 className="text-xs text-gray-500 uppercase font-mono mb-2">Stress Trend</h3>
-                    <div className="flex items-center gap-2">
-                        {results.adaptiveMetrics.stressTrend === 'Increasing' ? <TrendingUp className="text-red-500" size={24}/> : 
-                         results.adaptiveMetrics.stressTrend === 'Decreasing' ? <TrendingUp className="text-emerald-500 transform rotate-180" size={24}/> :
-                         <Activity className="text-blue-500" size={24}/>}
-                        <span className="text-xl font-bold text-white">{results.adaptiveMetrics.stressTrend}</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">Based on weekly workload impact.</p>
-                 </div>
-
-                 {/* Recovery Forecast (Module 5) */}
-                 <div className="glass-panel p-6 rounded-xl border border-white/10 md:col-span-2">
-                    <h3 className="text-xs text-gray-500 uppercase font-mono mb-2">Projected Recovery</h3>
-                    <div className="flex justify-between items-end">
-                       <div>
-                          <span className="text-2xl font-bold text-white">{results.adaptiveMetrics.projectedRecoveryDate}</span>
-                          <p className="text-xs text-gray-500">Estimated completion date</p>
-                       </div>
-                       <div className="text-right">
-                          <span className={`text-sm font-bold ${results.adaptiveMetrics.loadAdjustmentFactor > 1 ? 'text-emerald-400' : 'text-orange-400'}`}>
-                              {results.adaptiveMetrics.loadAdjustmentFactor > 1 ? 'Accelerating' : 'Adjusted Pace'}
-                          </span>
-                          <p className="text-xs text-gray-500">Load Factor: {(results.adaptiveMetrics.loadAdjustmentFactor * 100).toFixed(0)}%</p>
-                       </div>
-                    </div>
-                 </div>
-              </div>
-           </div>
-        )}
-
-        {/* 3. PRIORITY OVERVIEW */}
-        {results?.prioritizedSubjects.length && results.prioritizedSubjects.length > 0 && (
-          <div className="space-y-6">
-             <div className="flex items-end border-b border-white/10 pb-4">
-              <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
-                <ListOrdered className="text-red-500" size={18} />
-                Priority Roadmap
-              </h2>
-            </div>
-            <div className="space-y-3">
-              <AnimatePresence>
-                 {results.prioritizedSubjects.slice(0, 3).map((subject) => (
-                    <motion.div 
-                      key={subject.id}
-                      className={`glass-panel rounded-xl border flex items-center gap-6 p-4 border-white/5 bg-white/[0.02]`}
-                    >
-                       <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-white/5 font-display font-bold text-sm text-white">{subject.priorityRank}</div>
-                       <div className="flex-1"><h4 className="font-bold text-white">{subject.name}</h4></div>
-                       <div className="shrink-0"><span className="text-xs text-gray-400">{subject.priorityTier}</span></div>
-                    </motion.div>
-                 ))}
-              </AnimatePresence>
-            </div>
-          </div>
-        )}
-
-        {/* 4. WEEKLY RECOVERY PLAN */}
-        {results?.weeklyPlan && (
-          <div className="space-y-6">
-            <div className="flex items-end justify-between border-b border-white/10 pb-4">
-              <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
-                <CalendarDays className="text-red-500" size={18} />
-                Active Recovery Plan
-              </h2>
-              {/* Module 1: Rebalance Button */}
-              {showRebalance && (
-                <button onClick={rebalanceSchedule} className="px-3 py-1 bg-orange-600/20 text-orange-400 border border-orange-600/50 rounded-lg text-xs font-bold animate-pulse hover:bg-orange-600/30 transition-all flex items-center gap-2">
-                   <RotateCcw size={12}/> Rebalance Missed Tasks
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-               {results.weeklyPlan.days.map((day, dIdx) => (
-                 <motion.div
-                   key={day.dayNumber}
-                   initial={{ opacity: 0, scale: 0.95 }}
-                   animate={{ opacity: 1, scale: 1 }}
-                   transition={{ delay: day.dayNumber * 0.05 }}
-                   className={`glass-panel p-4 rounded-xl border border-white/5 flex flex-col h-full`}
-                 >
-                    <div className="flex justify-between items-center mb-4 pb-2 border-b border-white/5">
-                       <div>
-                          <span className="text-xs text-red-500 font-bold uppercase tracking-widest block">Day {day.dayNumber}</span>
-                          <span className="text-lg font-bold text-white">{day.label}</span>
-                       </div>
-                       <div className="px-2 py-0.5 rounded text-[10px] uppercase font-bold border border-white/10 text-gray-400">{day.intensity}</div>
-                    </div>
-
-                    <div className="space-y-2 flex-1">
-                       {day.tasks.length === 0 ? <div className="h-full flex items-center justify-center text-gray-600 text-xs italic">Rest Day</div> : 
-                         day.tasks.map((task) => (
-                           // Task Interactive Card
-                           <div key={task.id} 
-                                onClick={() => toggleTaskStatus(dIdx, task.id)}
-                                className={`rounded-lg p-2.5 transition-all cursor-pointer border-l-2 select-none group ${getStatusColor(task.status)}`}
-                                style={{ borderLeftColor: task.type === 'Buffer' ? '#10B981' : task.status === 'Completed' ? '#10B981' : task.status === 'Missed' ? '#EF4444' : 'currentColor' }}
-                           >
-                              <div className="flex justify-between items-start mb-1">
-                                 <span className={`text-xs font-bold truncate max-w-[70%] group-hover:underline ${task.status === 'Completed' ? 'line-through opacity-50' : ''}`}>
-                                   {task.subjectName}
-                                 </span>
-                                 <span className="text-[10px] opacity-70 font-mono">{formatDuration(task.durationMinutes)}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-1.5 opacity-70">
-                                     {getTaskIcon(task.type)}
-                                     <span className="text-[10px] uppercase tracking-wide">
-                                       {task.type === 'Buffer' ? 'Extra' : task.type}
-                                     </span>
-                                 </div>
-                                 <span className="text-[9px] uppercase font-bold tracking-widest opacity-60">{task.status === 'Pending' ? '' : task.status}</span>
-                              </div>
-                           </div>
-                         ))
-                       }
-                    </div>
-                    
-                    <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center text-xs text-gray-500 font-mono">
-                       <span>Total: {formatDuration(day.totalMinutes)}</span>
-                       {day.bufferMinutes > 0 && <span className="text-emerald-500/80">Free: {formatDuration(day.bufferMinutes)}</span>}
-                    </div>
-                 </motion.div>
-               ))}
-            </div>
-          </div>
-        )}
-
-        {/* 5. STUDENT PROFILE */}
-        <div className="space-y-6">
-          <div className="flex items-end border-b border-white/10 pb-4">
+          <div className="flex items-end border-b border-white/10 pb-4 mt-8">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
               <Brain className="text-red-500" size={18} />
               Adaptive Context
@@ -913,7 +887,7 @@ const Engine: React.FC = () => {
           <div className="glass-panel p-6 rounded-xl border border-white/10">
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <div className="space-y-2">
-                 <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider flex items-center gap-2"><Clock size={12} /> Daily Capacity</label>
+                 <label className="text-[10px] uppercase font-mono text-gray-500 tracking-wider flex items-center gap-2"><Clock size={12} /> Daily Capacity (Study Hours)</label>
                  <input type="number" min="1" max="24" value={studentProfile.availableHoursPerDay} onChange={(e) => updateStudentProfile('availableHoursPerDay', parseInt(e.target.value) || 0)} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-red-500 font-mono" />
                </div>
                <div className="space-y-2">
@@ -930,20 +904,633 @@ const Engine: React.FC = () => {
                </div>
              </div>
           </div>
-        </div>
-
-        {/* 6. ACTION BAR */}
-        <div className="fixed bottom-0 left-0 w-full bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 z-40">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-             <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${status === CalculationStatus.VALID ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                <div><p className="text-xs font-mono text-gray-400 uppercase tracking-widest">{status === CalculationStatus.VALID ? 'SYSTEM READY' : 'AWAITING INPUT'}</p></div>
-             </div>
+          
+          <div className="flex justify-end pt-4">
              <button onClick={runRecoveryEngine} disabled={status !== CalculationStatus.VALID || isGenerating} className={`px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${status === CalculationStatus.VALID ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_20px_rgba(220,38,38,0.4)]' : 'bg-white/5 text-gray-600 cursor-not-allowed border border-white/5'}`}>
-               {isGenerating ? <RefreshCcw size={14} className="animate-spin" /> : results ? <>Regenerate Plan <RefreshCcw size={14} /></> : <>Generate Plan <ArrowRight size={14} /></>}
+               {isGenerating ? <RefreshCcw size={14} className="animate-spin" /> : <>Generate Plan <ArrowRight size={14} /></>}
              </button>
           </div>
+
+          {results && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 mt-12 border-t border-white/10 pt-12">
+               <div className="space-y-6">
+                 <div className="flex items-end border-b border-white/10 pb-4">
+                  <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
+                    <ListOrdered className="text-red-500" size={18} />
+                    Priority Roadmap
+                  </h2>
+                </div>
+                <div className="space-y-3">
+                  <AnimatePresence>
+                     {results.prioritizedSubjects.slice(0, 3).map((subject) => (
+                        <motion.div 
+                          key={subject.id}
+                          className={`glass-panel rounded-xl border flex items-center gap-6 p-4 border-white/5 bg-white/[0.02]`}
+                        >
+                           <div className="shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-white/5 font-display font-bold text-sm text-white">{subject.priorityRank}</div>
+                           <div className="flex-1"><h4 className="font-bold text-white">{subject.name}</h4></div>
+                           <div className="shrink-0"><span className="text-xs text-gray-400">{subject.priorityTier}</span></div>
+                        </motion.div>
+                     ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="flex items-end justify-between border-b border-white/10 pb-4">
+                  <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
+                    <CalendarDays className="text-red-500" size={18} />
+                    Active Recovery Plan
+                  </h2>
+                  {showRebalance && (
+                    <button onClick={rebalanceSchedule} className="px-3 py-1 bg-orange-600/20 text-orange-400 border border-orange-600/50 rounded-lg text-xs font-bold animate-pulse hover:bg-orange-600/30 transition-all flex items-center gap-2">
+                       <RotateCcw size={12}/> Rebalance Missed Tasks
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                   {results.weeklyPlan.days.map((day, dIdx) => (
+                     <motion.div
+                       key={day.dayNumber}
+                       initial={{ opacity: 0, scale: 0.95 }}
+                       animate={{ opacity: 1, scale: 1 }}
+                       transition={{ delay: day.dayNumber * 0.05 }}
+                       className={`glass-panel p-4 rounded-xl border border-white/5 flex flex-col h-full`}
+                     >
+                        <div className="flex justify-between items-center mb-4 pb-2 border-b border-white/5">
+                           <div>
+                              <span className="text-xs text-red-500 font-bold uppercase tracking-widest block">Day {day.dayNumber}</span>
+                              <span className="text-lg font-bold text-white">{day.label}</span>
+                           </div>
+                           <div className="px-2 py-0.5 rounded text-[10px] uppercase font-bold border border-white/10 text-gray-400">{day.intensity}</div>
+                        </div>
+
+                        <div className="space-y-2 flex-1">
+                           {day.tasks.length === 0 ? <div className="h-full flex items-center justify-center text-gray-600 text-xs italic">Rest Day</div> : 
+                             day.tasks.map((task) => (
+                               <div key={task.id} 
+                                    onClick={() => toggleTaskStatus(day.dayNumber, task.id)}
+                                    className={`rounded-lg p-2.5 transition-all cursor-pointer border-l-2 select-none group ${getStatusColor(task.status)}`}
+                                    style={{ borderLeftColor: task.type === 'Buffer' ? '#10B981' : task.status === 'Completed' ? '#10B981' : task.status === 'Missed' ? '#EF4444' : 'currentColor' }}
+                               >
+                                  <div className="flex justify-between items-start mb-1">
+                                     <span className={`text-xs font-bold truncate max-w-[70%] group-hover:underline ${task.status === 'Completed' ? 'line-through opacity-50' : ''}`}>
+                                       {task.subjectName}
+                                     </span>
+                                     <span className="text-[10px] opacity-70 font-mono">{formatDuration(task.durationMinutes)}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                     <div className="flex items-center gap-1.5 opacity-70">
+                                         {getTaskIcon(task.type)}
+                                         <span className="text-[10px] uppercase tracking-wide">
+                                           {task.type === 'Buffer' ? 'Extra' : task.type}
+                                         </span>
+                                     </div>
+                                     <span className="text-[9px] uppercase font-bold tracking-widest opacity-60">{task.status === 'Pending' ? '' : task.status}</span>
+                                  </div>
+                               </div>
+                             ))
+                           }
+                        </div>
+                     </motion.div>
+                   ))}
+                </div>
+              </div>
+
+            </motion.div>
+          )}
+    </motion.div>
+  );
+
+  const renderCalendar = () => {
+    if (!results) return (
+      <div className="text-center py-20 text-gray-500">
+        <Calendar size={48} className="mx-auto mb-4 opacity-50" />
+        <p>No plan generated yet. Go to the Generator to create your schedule.</p>
+      </div>
+    );
+
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDay = firstDay.getDay(); 
+
+    const days = [];
+    for (let i = 0; i < startingDay; i++) {
+        days.push(null);
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+        days.push(new Date(year, month, i));
+    }
+
+    const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
+    const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+    
+    // Find plan for selected date
+    const selectedDateStr = selectedDate || new Date().toISOString().split('T')[0];
+    const selectedDayPlan = results.weeklyPlan.days.find(d => d.dateString === selectedDateStr);
+
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col lg:flex-row gap-8">
+        <div className="flex-1">
+            <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-display font-bold text-white">{currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2>
+            <div className="flex gap-2">
+                <button onClick={prevMonth} className="p-2 hover:bg-white/10 rounded-lg"><ChevronLeft /></button>
+                <button onClick={nextMonth} className="p-2 hover:bg-white/10 rounded-lg"><ChevronRight /></button>
+            </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-px bg-white/10 rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                <div key={d} className="bg-neutral-900 p-4 text-center text-xs font-bold text-gray-500 uppercase tracking-widest">{d}</div>
+            ))}
+            
+            {days.map((date, idx) => {
+                if (!date) return <div key={idx} className="bg-black min-h-[100px]"></div>;
+                
+                const dateStr = date.toISOString().split('T')[0];
+                const dayPlan = results.weeklyPlan.days.find(d => d.dateString === dateStr);
+                const isToday = new Date().toISOString().split('T')[0] === dateStr;
+                const isSelected = selectedDate === dateStr;
+                
+                // Count tasks status
+                const total = dayPlan?.tasks.length || 0;
+                const completed = dayPlan?.tasks.filter(t => t.status === 'Completed').length || 0;
+                const missed = dayPlan?.tasks.filter(t => t.status === 'Missed').length || 0;
+                const hasTasks = total > 0;
+
+                return (
+                <div 
+                    key={idx} 
+                    onClick={() => setSelectedDate(dateStr)}
+                    className={`bg-black min-h-[100px] p-3 border-t border-white/5 relative group cursor-pointer transition-all duration-200 
+                        ${isSelected ? 'bg-white/[0.03] ring-1 ring-inset ring-red-500/50' : 'hover:bg-white/[0.02]'}
+                        ${isToday ? 'bg-red-900/5' : ''}`}
+                >
+                    <div className="flex justify-between items-start mb-2">
+                        <span className={`text-sm font-mono ${isToday ? 'text-red-500 font-bold' : 'text-gray-400'} ${isSelected ? 'text-white' : ''}`}>
+                            {date.getDate()}
+                        </span>
+                        {hasTasks && (
+                            <div className="flex gap-1">
+                                {missed > 0 && <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>}
+                                {completed === total ? <CheckCircle2 size={12} className="text-emerald-500" /> : <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {hasTasks ? (
+                        <div className="space-y-1">
+                            {dayPlan?.tasks.slice(0, 3).map(task => (
+                                <div key={task.id} className={`h-1.5 rounded-full w-full ${task.status === 'Completed' ? 'bg-emerald-500/30' : task.status === 'Missed' ? 'bg-red-500/30' : 'bg-white/10'}`}></div>
+                            ))}
+                            {dayPlan && dayPlan.tasks.length > 3 && <div className="text-[9px] text-gray-600 text-center">+{dayPlan.tasks.length - 3} more</div>}
+                        </div>
+                    ) : (
+                        <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                             <Plus size={12} className="text-gray-600" />
+                        </div>
+                    )}
+                </div>
+                );
+            })}
+            </div>
         </div>
+
+        {/* Calendar Side Panel Detail View */}
+        <AnimatePresence mode="wait">
+            <motion.div 
+                key={selectedDate}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="w-full lg:w-96 glass-panel border border-white/10 rounded-xl p-6 h-fit"
+            >
+                <div className="border-b border-white/10 pb-4 mb-4">
+                    <h3 className="text-xl font-bold text-white mb-1">
+                        {new Date(selectedDateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric'})}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-gray-500 uppercase tracking-widest">
+                            {selectedDayPlan ? `${selectedDayPlan.intensity} Intensity` : 'Free Day'}
+                        </span>
+                        {selectedDayPlan && (
+                            <span className="px-2 py-0.5 rounded-full bg-white/5 text-[10px] text-gray-400">
+                                {formatDuration(selectedDayPlan.totalMinutes)} Total
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                    {!selectedDayPlan || selectedDayPlan.tasks.length === 0 ? (
+                        <div className="text-center py-10 text-gray-600 italic">
+                            No tasks scheduled for this day.
+                        </div>
+                    ) : (
+                        selectedDayPlan.tasks.map(task => (
+                            <div 
+                                key={task.id}
+                                onClick={() => toggleTaskStatus(selectedDayPlan.dayNumber, task.id)}
+                                className={`p-3 rounded-lg border border-transparent hover:border-white/10 cursor-pointer transition-all group ${getStatusColor(task.status)} bg-black/40`}
+                            >
+                                <div className="flex justify-between items-start mb-2">
+                                    <h4 className={`font-bold text-sm ${task.status === 'Completed' ? 'line-through opacity-50' : 'text-white'}`}>
+                                        {task.subjectName}
+                                    </h4>
+                                    {task.status === 'Completed' && <CheckCircle2 size={16} className="text-emerald-500" />}
+                                    {task.status === 'Missed' && <AlertCircle size={16} className="text-red-500" />}
+                                </div>
+                                <div className="flex justify-between items-end">
+                                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                                        {getTaskIcon(task.type)}
+                                        <span>{task.type}</span>
+                                    </div>
+                                    <span className="text-xs font-mono text-gray-500">{formatDuration(task.durationMinutes)}</span>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </motion.div>
+        </AnimatePresence>
+      </motion.div>
+    );
+  };
+
+  const renderMaterials = () => (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+       <div className="glass-panel p-6 rounded-xl border border-white/10">
+          <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Upload size={18} /> Upload New Material</h3>
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+             <div className="flex-1 space-y-2 w-full">
+                <label className="text-xs text-gray-500 font-mono">TITLE</label>
+                <input 
+                  type="text" 
+                  value={newMaterialTitle}
+                  onChange={(e) => setNewMaterialTitle(e.target.value)}
+                  placeholder="e.g. Chapter 4 Summary" 
+                  className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-red-500 text-sm"
+                />
+             </div>
+             <div className="flex-1 space-y-2 w-full">
+                <label className="text-xs text-gray-500 font-mono">FILE</label>
+                <div className="relative">
+                    <input 
+                    ref={fileInputRef}
+                    type="file" 
+                    onChange={handleFileSelect}
+                    className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10"
+                    />
+                    <div className={`bg-black/40 border rounded-lg p-3 text-sm flex items-center justify-between transition-colors ${tempFile ? 'border-red-500/50 text-white' : 'border-white/10 text-gray-400'}`}>
+                        <span>{tempFile ? tempFile.name : "Choose file..."}</span>
+                        <Upload size={14} className={tempFile ? 'text-red-500' : ''} />
+                    </div>
+                </div>
+             </div>
+             <button 
+                onClick={addMaterial}
+                disabled={!newMaterialTitle || !tempFile}
+                className={`px-6 py-3 rounded-lg font-bold text-xs uppercase tracking-widest flex items-center gap-2 whitespace-nowrap transition-all ${(!newMaterialTitle || !tempFile) ? 'bg-white/5 text-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 text-white shadow-lg'}`}
+             >
+                <Plus size={14} /> Add Material
+             </button>
+          </div>
+       </div>
+
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {materials.length === 0 && <p className="text-gray-500 text-sm col-span-3 text-center py-10">No materials uploaded yet.</p>}
+          {materials.map(mat => (
+             <div key={mat.id} className="glass-panel p-4 rounded-xl border border-white/10 hover:border-red-500/30 transition-all group">
+                <div className="flex justify-between items-start mb-4">
+                   <div className="p-3 bg-white/5 rounded-lg text-red-500">
+                      {mat.type === 'Image' ? <ImageIcon size={20} /> : <FileText size={20} />}
+                   </div>
+                   <button 
+                    onClick={(e) => { e.stopPropagation(); deleteMaterial(mat.id); }} 
+                    className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-white/5 rounded-lg"
+                    title="Delete"
+                   >
+                       <Trash2 size={16}/>
+                   </button>
+                </div>
+                <h4 className="font-bold text-white mb-1 truncate" title={mat.title}>{mat.title}</h4>
+                <p className="text-xs text-gray-500 mb-4">{mat.fileName} • {mat.createdAt}</p>
+                
+                {mat.type === 'Image' && (
+                    <div className="h-32 w-full bg-black/50 rounded mb-3 overflow-hidden border border-white/5">
+                        <img src={mat.fileUrl} alt={mat.title} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                )}
+                
+                <div className="flex gap-2 mt-4">
+                    <a 
+                        href={mat.fileUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex-1 py-2 rounded bg-white/5 hover:bg-white/10 text-xs font-bold text-center text-gray-300 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Eye size={12} /> View
+                    </a>
+                    <a 
+                        href={mat.fileUrl} 
+                        download={mat.fileName} 
+                        className="flex-1 py-2 rounded bg-red-600/10 hover:bg-red-600/20 border border-red-600/20 text-xs font-bold text-center text-red-400 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Download size={12} /> Download
+                    </a>
+                </div>
+             </div>
+          ))}
+       </div>
+    </motion.div>
+  );
+
+  const renderTools = () => (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10">
+       {/* Tool Selector */}
+       <div className="flex justify-center gap-4">
+           {[
+               { id: 'pomodoro', label: 'Pomodoro', icon: <Timer size={18}/> },
+               { id: 'stopwatch', label: 'Stopwatch', icon: <StopCircle size={18}/> },
+               { id: 'breathing', label: 'Breathing', icon: <Wind size={18}/> }
+           ].map(tool => (
+               <button
+                key={tool.id}
+                onClick={() => setActiveTool(tool.id as any)}
+                className={`px-6 py-3 rounded-full border flex items-center gap-2 transition-all ${activeTool === tool.id ? 'bg-red-600 border-red-500 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
+               >
+                   {tool.icon} {tool.label}
+               </button>
+           ))}
+       </div>
+
+       {/* POMODORO VIEW */}
+       {activeTool === 'pomodoro' && (
+           <div className="max-w-xl mx-auto text-center space-y-12 py-10">
+                <div className="relative">
+                    <div className="w-64 h-64 mx-auto rounded-full border-4 border-white/5 flex items-center justify-center relative">
+                        <div className="absolute inset-0 rounded-full border-4 border-red-500 border-t-transparent animate-spin duration-[3000ms]" style={{ animationPlayState: isTimerRunning ? 'running' : 'paused' }}></div>
+                        <div className="text-center z-10">
+                            <span className="block text-6xl font-display font-bold text-white tracking-tighter tabular-nums">{formatSeconds(timerTime)}</span>
+                            <span className={`text-sm font-mono uppercase tracking-widest mt-2 block ${timerMode === 'Work' ? 'text-red-500' : 'text-emerald-500'}`}>{timerMode} Mode</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex justify-center gap-6">
+                    <button onClick={() => setIsTimerRunning(!isTimerRunning)} className="w-16 h-16 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all hover:scale-110">
+                        {isTimerRunning ? <Pause size={24} fill="white" /> : <Play size={24} fill="white" className="ml-1" />}
+                    </button>
+                    <button onClick={() => { setIsTimerRunning(false); setTimerTime(25*60); setTimerMode('Work'); }} className="w-16 h-16 rounded-full bg-white/5 hover:bg-red-500/20 hover:text-red-500 border border-white/10 flex items-center justify-center text-gray-400 transition-all hover:scale-110">
+                        <Square size={20} />
+                    </button>
+                </div>
+                <div className="glass-panel p-6 rounded-xl border border-white/10 text-left">
+                    <h4 className="font-bold text-white mb-2 flex items-center gap-2"><Clock size={16} className="text-red-500"/> The Pomodoro Technique</h4>
+                    <p className="text-sm text-gray-400">Work for 25 minutes, then take a 5 minute break. After 4 cycles, take a longer 15-30 minute break.</p>
+                </div>
+           </div>
+       )}
+
+       {/* STOPWATCH VIEW */}
+       {activeTool === 'stopwatch' && (
+           <div className="max-w-xl mx-auto text-center space-y-12 py-10">
+                <div className="relative">
+                    <div className="w-64 h-64 mx-auto rounded-full border-4 border-white/5 flex items-center justify-center relative bg-white/[0.02]">
+                        <div className="text-center z-10">
+                            <span className="block text-5xl font-display font-bold text-white tracking-widest tabular-nums">{formatStopwatch(stopwatchTime)}</span>
+                            <span className="text-xs font-mono uppercase tracking-widest mt-4 block text-blue-500">Elapsed Time</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex justify-center gap-6">
+                    <button onClick={() => setIsStopwatchRunning(!isStopwatchRunning)} className="w-16 h-16 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all hover:scale-110">
+                        {isStopwatchRunning ? <Pause size={24} fill="white" /> : <Play size={24} fill="white" className="ml-1" />}
+                    </button>
+                    <button onClick={() => { setIsStopwatchRunning(false); setStopwatchTime(0); }} className="w-16 h-16 rounded-full bg-white/5 hover:bg-red-500/20 hover:text-red-500 border border-white/10 flex items-center justify-center text-gray-400 transition-all hover:scale-110">
+                        <RotateCcw size={20} />
+                    </button>
+                </div>
+           </div>
+       )}
+
+       {/* BREATHING VIEW */}
+       {activeTool === 'breathing' && (
+           <div className="max-w-xl mx-auto text-center space-y-12 py-10">
+                <div className="relative flex justify-center py-10">
+                   <div className="w-48 h-48 bg-emerald-500/20 rounded-full flex items-center justify-center animate-pulse-slow relative">
+                       <div className="absolute inset-0 bg-emerald-500/10 rounded-full animate-ping"></div>
+                       <Wind size={64} className="text-emerald-400" />
+                   </div>
+                </div>
+                <div className="glass-panel p-6 rounded-xl border border-white/10 text-center">
+                    <h4 className="font-bold text-white mb-2">Box Breathing</h4>
+                    <p className="text-sm text-gray-400">Inhale for 4 seconds, hold for 4, exhale for 4, hold for 4. Use this to reduce exam anxiety immediately.</p>
+                </div>
+           </div>
+       )}
+    </motion.div>
+  );
+
+  const renderAnalytics = () => {
+    if (!results) return <div className="text-center text-gray-500 py-20">Generate a plan to see analytics.</div>;
+
+    const taskDistribution = results.weeklyPlan.days.flatMap(d => d.tasks).reduce((acc: any, task) => {
+       acc[task.subjectName] = (acc[task.subjectName] || 0) + 1;
+       return acc;
+    }, {});
+    
+    // Data for Pie Chart
+    const pieData = Object.keys(taskDistribution).map(key => ({ name: key, value: taskDistribution[key] }));
+    const COLORS = ['#DC2626', '#EA580C', '#D97706', '#059669', '#2563EB'];
+
+    // Data for Bar Chart
+    const completionData = [
+       { name: 'Completed', value: results.weeklyPlan.days.flatMap(d => d.tasks).filter(t => t.status === 'Completed').length },
+       { name: 'Missed', value: results.weeklyPlan.days.flatMap(d => d.tasks).filter(t => t.status === 'Missed').length },
+       { name: 'Pending', value: results.weeklyPlan.days.flatMap(d => d.tasks).filter(t => t.status === 'Pending').length },
+    ];
+
+    // Data for Area Chart (Daily Effort Trend)
+    const areaData = results.weeklyPlan.days.map(d => ({
+        name: `Day ${d.dayNumber}`,
+        minutes: d.totalMinutes
+    }));
+
+    // Data for Radar Chart (Subject Difficulty/Load)
+    const radarData = subjects.map(s => ({
+        subject: s.name,
+        A: s.pressureScore || 50,
+        fullMark: 100
+    }));
+
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+         {/* Top Stats Row */}
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+             <div className="glass-panel p-4 rounded-xl border border-white/10">
+                 <h4 className="text-xs text-gray-500 font-mono">TOTAL HOURS</h4>
+                 <p className="text-2xl font-bold text-white mt-1">{results.weeklyPlan.totalWeeklyHours}</p>
+             </div>
+             <div className="glass-panel p-4 rounded-xl border border-white/10">
+                 <h4 className="text-xs text-gray-500 font-mono">TASKS</h4>
+                 <p className="text-2xl font-bold text-white mt-1">{results.weeklyPlan.days.reduce((acc, d) => acc + d.tasks.length, 0)}</p>
+             </div>
+             <div className="glass-panel p-4 rounded-xl border border-white/10">
+                 <h4 className="text-xs text-gray-500 font-mono">DAYS ACTIVE</h4>
+                 <p className="text-2xl font-bold text-white mt-1">7</p>
+             </div>
+             <div className="glass-panel p-4 rounded-xl border border-white/10">
+                 <h4 className="text-xs text-gray-500 font-mono">AVG/DAY</h4>
+                 <p className="text-2xl font-bold text-white mt-1">{(results.weeklyPlan.totalWeeklyHours / 7).toFixed(1)}h</p>
+             </div>
+         </div>
+
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Daily Effort Trend - Area Chart */}
+            <div className="glass-panel p-6 rounded-xl border border-white/10">
+               <h3 className="text-sm font-bold text-white mb-6 uppercase tracking-wider flex items-center gap-2"><Activity size={16} className="text-red-500"/> Daily Workload Trend</h3>
+               <div className="h-64">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={areaData}>
+                        <defs>
+                            <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#DC2626" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#DC2626" stopOpacity={0}/>
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                        <XAxis dataKey="name" stroke="#666" fontSize={10} />
+                        <YAxis stroke="#666" fontSize={10} />
+                        <RechartsTooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} />
+                        <Area type="monotone" dataKey="minutes" stroke="#DC2626" fillOpacity={1} fill="url(#colorMinutes)" />
+                    </AreaChart>
+                 </ResponsiveContainer>
+               </div>
+            </div>
+
+            {/* Subject Balance - Radar Chart */}
+            <div className="glass-panel p-6 rounded-xl border border-white/10">
+               <h3 className="text-sm font-bold text-white mb-6 uppercase tracking-wider flex items-center gap-2"><Target size={16} className="text-blue-500"/> Subject Pressure Map</h3>
+               <div className="h-64">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                        <PolarGrid stroke="#333" />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#888', fontSize: 10 }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 150]} tick={false} />
+                        <Radar name="Pressure" dataKey="A" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.6} />
+                        <RechartsTooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} />
+                    </RadarChart>
+                 </ResponsiveContainer>
+               </div>
+            </div>
+
+            {/* Completion Bar Chart */}
+            <div className="glass-panel p-6 rounded-xl border border-white/10">
+               <h3 className="text-sm font-bold text-white mb-6 uppercase tracking-wider flex items-center gap-2"><CheckCircle2 size={16} className="text-emerald-500"/> Task Completion</h3>
+               <div className="h-64">
+                 <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={completionData}>
+                     <XAxis dataKey="name" stroke="#555" tick={{fill: '#888', fontSize: 10}} />
+                     <YAxis stroke="#555" tick={{fill: '#888', fontSize: 10}} />
+                     <RechartsTooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} />
+                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                       {completionData.map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={index === 0 ? '#10B981' : index === 1 ? '#EF4444' : '#6B7280'} />
+                       ))}
+                     </Bar>
+                   </BarChart>
+                 </ResponsiveContainer>
+               </div>
+            </div>
+
+            {/* Distribution Pie Chart */}
+            <div className="glass-panel p-6 rounded-xl border border-white/10">
+               <h3 className="text-sm font-bold text-white mb-6 uppercase tracking-wider flex items-center gap-2"><PieChart size={16} className="text-orange-500"/> Subject Distribution</h3>
+               <div className="h-64">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} />
+                    </RechartsPie>
+                 </ResponsiveContainer>
+               </div>
+            </div>
+         </div>
+
+         <div className="glass-panel p-6 rounded-xl border border-white/10 bg-gradient-to-r from-red-900/10 to-transparent">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Zap size={20} className="text-yellow-500" /> AI Insights</h3>
+            <ul className="space-y-3 text-gray-400 text-sm">
+               {results.adaptiveMetrics?.completionRate && results.adaptiveMetrics.completionRate < 60 ? (
+                  <li className="flex items-start gap-2"><ArrowRight size={16} className="text-red-500 mt-0.5" /> Your completion rate is low. Try reducing your daily capacity in settings to make the plan more realistic.</li>
+               ) : (
+                  <li className="flex items-start gap-2"><ArrowRight size={16} className="text-emerald-500 mt-0.5" /> Great job keeping up! Consider increasing difficulty on your next module.</li>
+               )}
+               <li className="flex items-start gap-2"><ArrowRight size={16} className="text-blue-500 mt-0.5" /> You have a high workload on {results.weeklyPlan.days.reduce((max, d) => d.totalMinutes > max.totalMinutes ? d : max).label}. Use the Pomodoro timer to stay focused.</li>
+               <li className="flex items-start gap-2"><ArrowRight size={16} className="text-orange-500 mt-0.5" /> Check the Calendar daily. Marking tasks as "Missed" helps the engine rebalance your schedule accurately.</li>
+            </ul>
+         </div>
+      </motion.div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen pt-28 pb-32 px-4 md:px-8 bg-black bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-black to-black">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="text-center md:text-left space-y-2">
+                <h1 className="font-display text-4xl md:text-5xl font-bold text-white tracking-tight">
+                    Study <span className="text-gradient">Engine</span>
+                </h1>
+            </div>
+            
+            <div className="flex flex-col items-end gap-2">
+                 <button onClick={resetSession} className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-gray-400 hover:text-red-500 hover:border-red-500/30 transition-all">
+                    <RotateCcw size={14} /> Reset Data
+                 </button>
+                 {lastSaved && (
+                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-mono bg-black/40 px-3 py-1 rounded-full border border-white/5">
+                        <Check size={10} className="text-emerald-500" />
+                        SAVED {lastSaved}
+                     </div>
+                 )}
+            </div>
+        </div>
+
+        {/* Tab Navigation */}
+        {renderTabs()}
+
+        {/* Tab Content */}
+        <div className="min-h-[500px]">
+          {activeTab === 'generator' && renderGenerator()}
+          {activeTab === 'calendar' && renderCalendar()}
+          {activeTab === 'materials' && renderMaterials()}
+          {activeTab === 'tools' && renderTools()}
+          {activeTab === 'analytics' && renderAnalytics()}
+        </div>
+
+        {/* Action Bar (Only for Generator Tab or when Actions needed) */}
+        {activeTab === 'generator' && (
+          <div className="fixed bottom-0 left-0 w-full bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 z-40">
+            <div className="max-w-6xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${status === CalculationStatus.VALID ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                  <div><p className="text-xs font-mono text-gray-400 uppercase tracking-widest">{status === CalculationStatus.VALID ? 'SYSTEM READY' : 'AWAITING INPUT'}</p></div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
