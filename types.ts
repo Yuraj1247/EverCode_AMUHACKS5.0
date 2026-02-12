@@ -28,6 +28,10 @@ export interface Subject {
   priorityRank?: number;
   priorityTier?: PriorityTier;
   priorityExplanation?: string;
+
+  // Phase 6: Time Allocation Engine
+  allocatedHours?: number;
+  allocationPercentage?: number;
 }
 
 export interface StudentProfile {
@@ -47,6 +51,16 @@ export interface RecoveryMetrics {
   color: string; // Tailwind color class for UI
 }
 
+// Phase 6: Allocation Summary
+export interface AllocationMetrics {
+  totalAllocated: number;
+  bufferTime: number;
+  remainingTime: number;
+  maxSubjectName: string;
+  isBalanced: boolean;
+  message: string;
+}
+
 export enum CalculationStatus {
   IDLE = 'IDLE',
   VALID = 'VALID',
@@ -59,6 +73,7 @@ export interface RecoveryPlan {
   profile: StudentProfile;
   generatedAt: string;
   metrics: RecoveryMetrics;
+  allocation: AllocationMetrics;
 }
 
 export interface ContactForm {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star } from 'lucide-react';
-import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier } from '../types';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, ArrowRight, Layers, Activity, Brain, AlertTriangle, TrendingUp, BarChart, Zap, Gauge, ListOrdered, Flag, Target, Star, PieChart, Hourglass } from 'lucide-react';
+import { Subject, StudentProfile, DifficultyLevel, StressLevel, LearningPace, CalculationStatus, PressureCategory, RecoveryMetrics, PriorityTier, AllocationMetrics } from '../types';
 
 const Engine: React.FC = () => {
   // --- Centralized State ---
@@ -138,20 +138,12 @@ const Engine: React.FC = () => {
 
   // --- Phase 4: Overall Recovery Difficulty Engine ---
   const calculateRecoveryDifficulty = (enhancedSubjects: Subject[], profile: StudentProfile): RecoveryMetrics => {
-    // 1. Calculate Total Pressure
     const totalPressure = enhancedSubjects.reduce((acc, curr) => acc + (curr.pressureScore || 0), 0);
-
-    // 2. Calculate Time Capacity (Weekly effort)
     const weeklyCapacity = profile.availableHoursPerDay * 7;
-
-    // 3. Compute Load Ratio
     const loadRatio = totalPressure / weeklyCapacity;
-
-    // 4. Normalize to 0-100 Scale
     let difficultyScore = Math.round(loadRatio * 50);
     difficultyScore = Math.min(difficultyScore, 100);
 
-    // 5. Categorize
     let recoveryCategory: 'Low' | 'Moderate' | 'High' | 'Critical' = 'Low';
     let message = "Your recovery is manageable with steady effort.";
     let color = "text-emerald-500";
@@ -183,21 +175,18 @@ const Engine: React.FC = () => {
 
   // --- Phase 5: Intelligent Prioritization Module ---
   const prioritizeSubjects = (scoredSubjects: Subject[]): Subject[] => {
-    // 1. Sort by Pressure Score (Descending)
     const sorted = [...scoredSubjects].sort((a, b) => (b.pressureScore || 0) - (a.pressureScore || 0));
     const total = sorted.length;
 
     return sorted.map((sub, index) => {
       const rank = index + 1;
-      const percentile = index / total; // 0 is top rank
+      const percentile = index / total;
 
-      // 2. Assign Tier
       let tier: PriorityTier = 'Low Priority';
       if (percentile < 0.30) tier = 'Critical Priority';
       else if (percentile < 0.60) tier = 'High Priority';
       else if (percentile < 0.85) tier = 'Medium Priority';
 
-      // 3. Generate Explanation
       let explanation = "Maintain consistent study habits.";
       const urgencyHigh = (sub.urgencyScore || 0) >= 0.8;
       const urgencyLow = (sub.urgencyScore || 0) <= 0.2;
@@ -230,24 +219,140 @@ const Engine: React.FC = () => {
     });
   };
 
+  // --- Phase 6: Smart Time Allocation Engine ---
+  const allocateTime = (subjects: Subject[], profile: StudentProfile): { allocatedSubjects: Subject[], metrics: AllocationMetrics } => {
+    // 1. Calculate Buffer
+    let bufferRate = 0.10; // Default 10%
+    if (profile.stressLevel === 'High') bufferRate = 0.15;
+    
+    const bufferTime = Math.round((profile.availableHoursPerDay * bufferRate) * 100) / 100;
+    const usableHours = profile.availableHoursPerDay - bufferTime;
+
+    // 2. Determine Constraints based on Learning Pace
+    let minPerSubject = 0.5; // 30 mins
+    if (profile.learningPace === 'Fast') minPerSubject = 0.25; // 15 mins for fast learners
+    if (profile.learningPace === 'Slow') minPerSubject = 0.75; // 45 mins for slow learners (reduce switching)
+
+    const maxPerSubject = profile.availableHoursPerDay * 0.5;
+
+    // 3. Initial Proportional Distribution
+    const totalPressure = subjects.reduce((acc, s) => acc + (s.pressureScore || 0), 0);
+    
+    let allocations = subjects.map(s => {
+      const ratio = (s.pressureScore || 0) / totalPressure;
+      let rawHours = ratio * usableHours;
+      return { ...s, tempHours: rawHours };
+    });
+
+    // 4. Apply Min/Max Constraints (First Pass)
+    allocations = allocations.map(s => {
+      let h = s.tempHours;
+      if (h < minPerSubject) h = minPerSubject;
+      if (h > maxPerSubject) h = maxPerSubject;
+      return { ...s, tempHours: h };
+    });
+
+    // 5. Normalize if Total > Usable
+    // If applying minimums pushed us over budget, we prioritize top items or just scale down?
+    // The prompt implies respecting available hours is key. We will scale down to fit usable hours,
+    // even if it violates min constraint slightly for low priority items (preserves fairness).
+    const currentTotal = allocations.reduce((acc, s) => acc + s.tempHours, 0);
+    
+    if (currentTotal > usableHours) {
+       const scaleFactor = usableHours / currentTotal;
+       allocations = allocations.map(s => ({
+         ...s,
+         tempHours: s.tempHours * scaleFactor
+       }));
+    }
+
+    // 6. Rounding to 0.25h (15 mins)
+    let finalAllocations = allocations.map(s => {
+      // Round to nearest 0.25
+      let rounded = Math.round(s.tempHours * 4) / 4;
+      if (rounded < 0.25 && s.tempHours > 0) rounded = 0.25; // Hard floor of 15m if active
+      return {
+        ...s,
+        allocatedHours: rounded,
+      };
+    });
+
+    // 7. Final Sanity Check on Sum
+    // Rounding might cause slight overflow. 
+    // Sort by priority (rank) descending (high rank # means low priority) to shave off excess from bottom.
+    // Actually we want to sort by rank ascending (1 is top) to keep top safe.
+    // We want to remove time from lowest priority subjects (highest rank number).
+    finalAllocations.sort((a, b) => (a.priorityRank || 0) - (b.priorityRank || 0));
+
+    let finalSum = finalAllocations.reduce((acc, s) => acc + (s.allocatedHours || 0), 0);
+    let diff = finalSum - usableHours;
+
+    if (diff > 0) {
+       // Remove in 0.25 chunks from bottom up
+       for (let i = finalAllocations.length - 1; i >= 0; i--) {
+          if (diff <= 0.01) break;
+          const sub = finalAllocations[i];
+          if ((sub.allocatedHours || 0) >= 0.25) {
+             sub.allocatedHours = (sub.allocatedHours || 0) - 0.25;
+             diff -= 0.25;
+          }
+       }
+    }
+
+    // Recalculate Sum and Percentages
+    finalSum = finalAllocations.reduce((acc, s) => acc + (s.allocatedHours || 0), 0);
+    const remainingTime = Math.max(0, profile.availableHoursPerDay - finalSum - bufferTime);
+
+    // Re-map to original order (optional, but good for UI stability if we sort back)
+    // Actually prioritizeSubjects already returns sorted by rank.
+    
+    const resultSubjects = finalAllocations.map(s => ({
+      ...s,
+      allocationPercentage: Math.round(((s.allocatedHours || 0) / profile.availableHoursPerDay) * 100)
+    }));
+
+    // Metrics
+    const maxSubject = resultSubjects.reduce((prev, current) => 
+      (prev.allocatedHours || 0) > (current.allocatedHours || 0) ? prev : current
+    );
+
+    let message = "Your schedule is optimized for efficiency.";
+    if (profile.stressLevel === 'High') message = "Your workload has been adjusted to prevent burnout.";
+    else if (remainingTime > 0.5) message = "You have extra free time today. Use it wisely!";
+
+    return {
+      allocatedSubjects: resultSubjects,
+      metrics: {
+        totalAllocated: parseFloat(finalSum.toFixed(2)),
+        bufferTime: parseFloat(bufferTime.toFixed(2)),
+        remainingTime: parseFloat(remainingTime.toFixed(2)),
+        maxSubjectName: maxSubject.name,
+        isBalanced: (maxSubject.allocatedHours || 0) <= profile.availableHoursPerDay * 0.4, // heuristic
+        message
+      }
+    };
+  };
+
   // --- Main Computation Chain ---
-  const { analyzedSubjects, prioritizedSubjects, recoveryMetrics } = useMemo(() => {
+  const { analyzedSubjects, prioritizedSubjects, recoveryMetrics, allocationData } = useMemo(() => {
     const timeMetrics = calculateDeadlineMetrics(subjects);
     const pressureMetrics = calculatePressureMetrics(timeMetrics, studentProfile);
     
-    // Only calculate prioritized and recovery if we have subjects
     let prioritized: Subject[] = [];
     let recovery: RecoveryMetrics | null = null;
+    let allocation: { allocatedSubjects: Subject[], metrics: AllocationMetrics } | null = null;
 
     if (subjects.length > 0) {
       prioritized = prioritizeSubjects(pressureMetrics);
       recovery = calculateRecoveryDifficulty(pressureMetrics, studentProfile);
+      allocation = allocateTime(prioritized, studentProfile);
     }
 
     return { 
       analyzedSubjects: pressureMetrics, 
-      prioritizedSubjects: prioritized, 
-      recoveryMetrics: recovery 
+      prioritizedSubjects: allocation ? allocation.allocatedSubjects : prioritized, // Use the one with allocated hours
+      recoveryMetrics: recovery,
+      allocationData: allocation
     };
   }, [subjects, studentProfile]);
 
@@ -643,7 +748,84 @@ const Engine: React.FC = () => {
           </div>
         )}
 
-        {/* 4. STUDENT PROFILE SECTION */}
+        {/* 4. DAILY STUDY DISTRIBUTION (Phase 6) */}
+        {allocationData && (
+          <div className="space-y-6">
+             <div className="flex items-end border-b border-white/10 pb-4">
+              <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
+                <PieChart className="text-red-500" size={18} />
+                Daily Study Distribution
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-2 space-y-4">
+                {allocationData.allocatedSubjects
+                  .filter(s => (s.allocatedHours || 0) > 0)
+                  .map((subject, idx) => (
+                    <motion.div
+                      key={subject.id}
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: "100%" }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="glass-panel p-4 rounded-lg border border-white/5"
+                    >
+                       <div className="flex justify-between items-center mb-2">
+                         <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${subject.priorityTier === 'Critical Priority' ? 'bg-red-500' : 'bg-gray-500'}`}></span>
+                            <span className="text-sm font-bold text-white">{subject.name}</span>
+                         </div>
+                         <div className="flex items-center gap-3">
+                            <span className="text-xs text-gray-400">{subject.allocationPercentage}%</span>
+                            <span className="text-sm font-mono font-bold text-white bg-white/5 px-2 py-0.5 rounded">{subject.allocatedHours}h</span>
+                         </div>
+                       </div>
+                       
+                       {/* Allocation Bar */}
+                       <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${subject.allocationPercentage}%` }}
+                            className={`h-full ${subject.priorityTier === 'Critical Priority' ? 'bg-gradient-to-r from-red-600 to-red-400' : 'bg-gradient-to-r from-gray-600 to-gray-400'}`}
+                          />
+                       </div>
+                    </motion.div>
+                ))}
+              </div>
+
+              {/* Allocation Summary Stats */}
+              <div className="glass-panel p-6 rounded-xl border border-white/10 flex flex-col justify-between">
+                 <div>
+                    <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Hourglass size={16}/> Daily Overview</h3>
+                    <div className="space-y-4">
+                       <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg">
+                          <span className="text-xs text-gray-400 uppercase tracking-wider">Total Allocated</span>
+                          <span className="font-bold text-white">{allocationData.metrics.totalAllocated}h</span>
+                       </div>
+                       <div className="flex justify-between items-center p-3 bg-white/5 rounded-lg border border-white/5">
+                          <span className="text-xs text-gray-400 uppercase tracking-wider">Buffer Time</span>
+                          <span className="font-bold text-gray-300">{allocationData.metrics.bufferTime}h</span>
+                       </div>
+                       {allocationData.metrics.remainingTime > 0 && (
+                          <div className="flex justify-between items-center p-3 bg-emerald-900/10 border border-emerald-500/20 rounded-lg">
+                             <span className="text-xs text-emerald-400 uppercase tracking-wider">Free Time</span>
+                             <span className="font-bold text-emerald-400">{allocationData.metrics.remainingTime}h</span>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+
+                 <div className="mt-8 pt-6 border-t border-white/5">
+                    <p className="text-sm text-gray-400 italic">
+                      "{allocationData.metrics.message}"
+                    </p>
+                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 5. STUDENT PROFILE SECTION */}
         <div className="space-y-6">
           <div className="flex items-end border-b border-white/10 pb-4">
             <h2 className="font-display text-lg font-bold text-white flex items-center gap-2">
@@ -700,7 +882,7 @@ const Engine: React.FC = () => {
           </div>
         </div>
 
-        {/* 5. ACTION BAR */}
+        {/* 6. ACTION BAR */}
         <div className="fixed bottom-0 left-0 w-full bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 z-40">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
              <div className="flex items-center gap-3">
